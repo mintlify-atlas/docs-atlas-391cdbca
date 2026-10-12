@@ -1,14 +1,14 @@
 ---
-title: "TestForge Reports: Internal Exam Report Formats"
+title: "TestForge Reports: Internal Examination Report Formats"
 sidebarTitle: "TestForge Reports"
-description: "Generate TestForge internal reports — block allocation, daily summary, staff duty, and supervision schedules — for operational use during MSBTE examinations."
+description: "Generate TestForge internal reports — block allocation, daily summary, staff duty, and more — for operational use during MSBTE examinations."
 ---
 
 TestForge Reports are the platform's own internal report formats, separate from the official MSBTE F-series. These reports are designed for operational use by the exam centre team: planning block layouts before the exam, briefing supervisors, tracking attendance during the day, and producing duty rosters for the entire examination period. All reports are rendered using the `testforge-report-layout` wrapper, which applies a clean Inter-font A4 layout branded with your exam centre name.
 
 <CardGroup cols={2}>
   <Card title="Block Allocation Report" icon="table-cells">
-    Block-wise student seating summary for a selected date and session, including supervisor names, subject-to-block mapping, seat ranges, and an optional visual seat grid for each block.
+    Block-wise student seating summary for a selected date and session, including supervisor names, subject-to-block mapping, seat ranges, and a visual seat grid for each block.
   </Card>
   <Card title="Daily Summary Report" icon="chart-bar">
     Per-session attendance overview showing total, present, absent, and copy-case counts for every subject-block combination, with a grand-total attendance rate.
@@ -17,19 +17,19 @@ TestForge Reports are the platform's own internal report formats, separate from 
     Complete duty roster for all supervisors across the entire examination period, showing each staff member's assigned dates, sessions, and student counts.
   </Card>
   <Card title="Supervision Report" icon="calendar-days">
-    Supervisor-wise duty schedule for a selected session, grouped by supervisor and showing their assigned block, location, subject, student count, and timeslot.
+    Supervisor-wise duty schedule for a selected date and session, grouped by supervisor and showing their assigned block, location, subject, student count, and timeslot.
   </Card>
   <Card title="Subject Allocation Report" icon="book-open">
     Subject-to-block mapping report listing which subjects (by code and scheme) are allocated to which blocks, useful for question paper distribution planning.
   </Card>
   <Card title="QP Summary Report" icon="inbox-stack">
-    Question paper packet summary per session, showing expected and received packet counts per subject for reconciliation before the session begins.
+    Question paper packet summary per session, showing subject code, abbreviation, schemes, total received, total students, and code-wise balance for reconciliation before the session begins.
   </Card>
   <Card title="Blank Absent Form" icon="file-circle-xmark">
     Pre-formatted blank absentee statement for a block, ready to be filled in manually on exam day when the digital record is not yet available.
   </Card>
   <Card title="Blank Reliever Form" icon="file-lines">
-    Pre-formatted blank reliever duty form for a session, used when a reliever needs a paper record of their assigned duty before orders are distributed.
+    Pre-formatted blank reliever duty form for a session, listing each reliever's name, department, and assigned blocks with timeslots.
   </Card>
 </CardGroup>
 
@@ -39,18 +39,18 @@ TestForge Reports are the platform's own internal report formats, separate from 
 
 The Block Allocation report (`block-allocation.tsx`) generates two types of output in a single print run:
 
-1. **Block Allotment Summary** — A tabular overview of all blocks for the selected date and session, sorted by block number. Each row shows block number, location, supervisor name, scheme, subject code and name, seat range, student count, and timeslot. A grand total row summarises blocks, subjects, and students.
+1. **Block Allotment Summary** — A tabular overview of all blocks for the selected date and session, sorted by block number. Each row shows block number, location and supervisor name, scheme, subject code and name, seat range, student count, and timeslot. A grand total row summarises blocks, subjects, and students.
 
-2. **Block Detail Pages** — One page per block showing a header grid (date, session, block number, location, supervisor, total students), a per-subject breakdown table, and a visual seat grid. The seat grid is rendered using one of four configurable seating templates that control the direction in which seat numbers flow through the columns.
+2. **Block Detail Pages** — One page per block showing a header grid (date, session, block number, location, supervisor, total students), a per-subject breakdown table (scheme, subject code and name, seat range, students, timeslot), and a visual seat grid. The seat grid is rendered using one of four configurable seating templates that control the direction in which seat numbers flow through the columns.
 
 **Seating templates:**
 
 | Template | Fill Direction |
 |----------|---------------|
-| 1 (default) | Right-to-left, alternating up/down per column |
-| 2 | Right-to-left, always top-to-bottom |
-| 3 | Left-to-right, always top-to-bottom |
-| 4 | Left-to-right, alternating up/down per column |
+| 1 (default) | Right-to-left columns, alternating top-to-bottom / bottom-to-top per column |
+| 2 | Right-to-left columns, always top-to-bottom |
+| 3 | Left-to-right columns, always top-to-bottom |
+| 4 | Left-to-right columns, alternating top-to-bottom / bottom-to-top per column |
 
 The template and column distribution for each block are configured in the Block Management module and stored in the `blocks` table.
 
@@ -65,7 +65,7 @@ The template and column distribution for each block are configured in the Block 
     The summary table renders first. Verify block counts, student totals, and supervisor assignments.
   </Step>
   <Step title="Set copies and print">
-    Use the **Copies per block** control to set how many copies of each block detail page you need, then click **Print All**.
+    Use the **Copies** control to set how many copies of each block detail page you need, then click **Print**.
   </Step>
 </Steps>
 
@@ -76,7 +76,7 @@ The template and column distribution for each block are configured in the Block 
 The Daily Summary report (`daily-summary.tsx`) provides an at-a-glance attendance overview for a single date and session. It combines allocation data with live absent numbers and copy-case counts fetched from the timetable entries.
 
 Each row in the report represents one subject-block combination and shows:
-- Block number and location
+- Serial number, block number and location
 - Subject code, name, and scheme
 - Supervisor name
 - Total, present, absent, and copy-case student counts
@@ -96,7 +96,7 @@ The Staff Duty report (`staff-duty.tsx`) produces a complete duty roster coverin
 
 Each staff row shows:
 - Serial number, staff name, UID, and department
-- One sub-row per unique date-session combination the staff member is assigned to, with the session badge (Morning / Afternoon) and student count
+- One sub-row per unique date-session combination the staff member is assigned to, with the date, session badge (Morning / Afternoon), and student count
 
 The report auto-loads on page open without requiring a date selection, since it spans all dates. It supports 1–5 copies and shows a grand total of staff and students in the footer.
 
@@ -106,7 +106,7 @@ The report auto-loads on page open without requiring a date selection, since it 
 
 The Supervision report (`supervision.tsx`) is a per-session duty schedule grouped by supervisor. Unlike the Staff Duty report (which spans all dates), the Supervision report is for a single selected date and session.
 
-Rows are grouped by supervisor — each supervisor appears once, with their block, location, and UID shown with `rowspan`, and one sub-row per subject assigned to that block. The footer shows totals for supervisors, blocks, and students. A **"Display at Examination Centre"** label appears in the page footer, as this report is typically posted on the notice board.
+Rows are grouped by supervisor — each supervisor appears once with their name and UID shown using `rowspan`, and one sub-row per subject assigned to that block. Each sub-row shows block number, location, scheme, subject, student count, and timeslot. The footer shows totals for supervisors, blocks, and students.
 
 <Tip>
 Generate the Supervision report the morning before each examination session and post it outside the examination hall. Supervisors can check their assigned block and location without needing to contact the control room.
@@ -118,8 +118,8 @@ Generate the Supervision report the morning before each examination session and 
 
 All TestForge reports use `testforge-report-layout.tsx`, which exports:
 
-- **`ReportLayout`** — wraps a single-page report with a header showing the exam centre name prominently, metadata fields (code, season, year, date, session), report title, and an optional footer with signature fields and a "Generated using TestForge®" credit.
-- **`MultiPageReport`** — renders paginated reports from a `ReportPageData[]` array. Each page merges the shared header config with per-page metadata (e.g., page number, block name, attendance rate). Supports a configurable copies control (1–5) and an optional copy-info footer label.
+- **`ReportLayout`** (default export) — wraps a single-page report with a header showing the exam centre name prominently, metadata fields (code, season, year, date, session), report title, and an optional footer with signature fields and a "Generated using TestForge®" credit.
+- **`MultiPageReport`** (named export) — renders paginated reports from a `ReportPageData[]` array. Each page merges the shared header config with per-page metadata. Supports a configurable copies control (1–5) via `onCopiesChange` and an optional copy-info footer label.
 
 The TestForge layout uses **Inter** as the body font (versus Times New Roman in the MSBTE layout) to distinguish internal reports from official MSBTE formats.
 

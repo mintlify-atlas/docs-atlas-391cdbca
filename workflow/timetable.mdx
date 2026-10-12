@@ -96,7 +96,7 @@ for i in range(0, len(entries), batch_size):
   </Step>
 
   <Step title="Process the timetable">
-    After the file is stored, click **Process**. The backend calls `POST /timetable/process`, which:
+    After the file is stored, click **Process**. The backend calls `POST /api/timetable/process`, which:
 
     1. Retrieves the latest `timetable`-type upload for the exam center
     2. Parses the HTML (or Excel) into structured entries

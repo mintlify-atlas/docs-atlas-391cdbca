@@ -1,5 +1,5 @@
 ---
-title: "Subscription & Billing — TestForge Configuration"
+title: "TestForge Subscription Billing Configuration Guide"
 sidebarTitle: "Subscription"
 description: "Configure Razorpay payments, manage subscription plans and promo codes, and understand the TestForge billing lifecycle for MSBTE exam center access."
 ---
@@ -29,11 +29,11 @@ TestForge requires four Razorpay credentials, split between client-side and serv
 
 1. Log in to the [Razorpay Dashboard](https://dashboard.razorpay.com).
 2. Go to **Settings → API Keys** and generate a key pair. Copy both `Key ID` and `Key Secret`.
-3. Go to **Settings → Webhooks**, create a new webhook pointing to `https://<your-domain>/api/payments/webhook`, select the `payment.captured` event, and copy the webhook secret.
+3. Go to **Settings → Webhooks** and copy the webhook secret to use as `RAZORPAY_WEBHOOK_SECRET` in your `.env` file.
 
 ## Subscription Lifecycle
 
-```
+```text
 User signs up
      │
      ▼
@@ -48,15 +48,15 @@ Billing page (/billing)
   └── Razorpay checkout widget opens
      │
      ▼
-POST /api/payments/checkout
+POST /api/payments/checkout  { action: "create" }
   └── Creates Razorpay order, stores pending payment record
      │
      ▼
 User completes payment in widget
      │
      ▼
-Razorpay webhook → POST /api/payments/webhook
-  └── Verifies HMAC signature
+POST /api/payments/checkout  { action: "verify" }
+  └── Verifies HMAC signature (razorpay_order_id + razorpay_payment_id)
   └── Activates subscription_tier + sets subscription_expires_at
      │
      ▼
@@ -76,9 +76,8 @@ Completing onboarding creates one `organizations` record and one `exam_centers` 
 
 | Route | Method | Description |
 |---|---|---|
-| `/api/payments/checkout` | `POST` | Creates a Razorpay order for the selected plan and inserts a `payments` record with `status = pending`. Returns the Razorpay `order_id` and amount to the client. |
-| `/api/payments/history` | `GET` | Returns the paginated payment history for the current organization. |
-| `/api/payments/webhook` | `POST` | Receives Razorpay webhook events. Verifies the `x-razorpay-signature` header and, on a successful `payment.captured` event, updates the payment status and activates the subscription. |
+| `/api/payments/checkout` | `POST` | Handles two actions via the `action` body field. `action: "create"` creates a Razorpay order and inserts a `payments` record with `status = pending`. `action: "verify"` verifies the HMAC payment signature and activates the subscription. |
+| `/api/payments/history` | `GET` | Returns all payment records for the current organization, ordered by `created_at` descending. |
 
 ## Database Schema
 
@@ -93,9 +92,9 @@ Stores one record per checkout attempt, linked to the organization that initiate
 | `plan_id` | `text` | Internal plan identifier (e.g., `monthly`, `annual`). |
 | `plan_name` | `text` | Human-readable plan name displayed in the UI. |
 | `amount` | `integer` | Amount in the smallest currency unit (paise for INR). |
-| `status` | `text` | Payment lifecycle state: `pending`, `captured`, `failed`. |
+| `status` | `text` | Payment lifecycle state: `pending`, `paid`, `failed`, `refunded`. |
 | `promo_code_id` | `uuid` | Optional FK → `promo_codes.id`. Set when a promo code was applied. |
-| `razorpay_order_id` | `text` | Razorpay order ID (unique index). Used for idempotent webhook processing. |
+| `razorpay_order_id` | `text` | Razorpay order ID (unique index). Used for idempotent payment verification. |
 | `razorpay_payment_id` | `text` | Razorpay payment ID returned after capture. |
 | `start_date` | `timestamp` | Subscription start date set on successful capture. |
 | `end_date` | `timestamp` | Subscription expiry date set on successful capture. |
@@ -108,7 +107,7 @@ Promo codes grant discounted or free subscription durations and can be applied a
 |---|---|---|
 | `id` | `uuid` | Primary key. |
 | `code` | `text` | Unique discount code entered by the user. |
-| `type` | `text` | Code type (e.g., `discount`, `free_trial`). |
+| `type` | `text` | Code type as a free-form text label (e.g., `trial`, `trial_60day`). The checkout handler checks this field to determine how to activate the subscription. |
 | `duration_days` | `integer` | Number of subscription days granted. Defaults to `30`. |
 | `amount` | `integer` | Discount amount in paise. Defaults to `100`. |
 | `is_used` | `boolean` | `true` once the code has been redeemed. Codes are single-use. |
@@ -136,5 +135,5 @@ RAZORPAY_WEBHOOK_SECRET=your-test-webhook-secret
 ```
 
 <Tip>
-  When testing webhooks locally, use [Razorpay's webhook simulator](https://dashboard.razorpay.com/app/webhooks) or a tool like `ngrok` to expose your local `/api/payments/webhook` endpoint. Confirm that the `RAZORPAY_WEBHOOK_SECRET` in your `.env` matches the secret configured on the Razorpay webhook settings page exactly.
+  In test mode, use Razorpay test card numbers and UPI handles from the [Razorpay test credentials page](https://razorpay.com/docs/payments/payment-gateway/test-mode/) to simulate the full checkout and verify flow end-to-end without real money.
 </Tip>

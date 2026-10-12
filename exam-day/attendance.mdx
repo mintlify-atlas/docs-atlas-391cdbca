@@ -1,5 +1,5 @@
 ---
-title: "Exam Day Attendance & Copy Case Management"
+title: "Exam Day Attendance and Copy Case Management Guide"
 sidebarTitle: "Attendance"
 description: "Mark absent seat numbers and record copy case students per subject, block, and session. Changes feed directly into F1 and F2 reports and attendance sheets."
 ---
@@ -66,7 +66,7 @@ Each row in the `timetable` table corresponds to one subject–scheme–session�
       subjectCode: string,
       scheme: string,
       date: Date,
-      session: "Morning" | "Afternoon",
+      session: "Morning" | "Afternoon" | "All",
       absentNumbers: number[],
     });
 
@@ -75,7 +75,7 @@ Each row in the `timetable` table corresponds to one subject–scheme–session�
       subjectCode: string,
       scheme: string,
       date: Date,
-      session: "Morning" | "Afternoon",
+      session: "Morning" | "Afternoon" | "All",
       cpsStudents: number[],
     });
     ```

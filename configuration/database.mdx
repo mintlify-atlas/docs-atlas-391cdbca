@@ -1,5 +1,5 @@
 ---
-title: "Database Setup & Schema — TestForge Configuration"
+title: "TestForge Database: Setup, Schema, and CLI Commands"
 sidebarTitle: "Database"
 description: "Set up PostgreSQL 16 for TestForge, run Drizzle ORM migrations, explore the multi-tenant schema, and manage your database with the built-in CLI commands."
 ---
@@ -110,12 +110,14 @@ TestForge is multi-tenant — every piece of exam data is scoped under an organi
 |---|---|---|
 | `uploads` | `exam_center_id`, `file_type`, `original_filename`, `file_hash`, `status`, `record_count`, `metadata` (jsonb) | Tracks every file upload (timetables, student data, QP files). Unique on `(exam_center_id, file_type, connected_institute_id)`. |
 | `qp_inventory` | `exam_center_id`, `date`, `session`, `subject_code`, `expected_packets`, `received_packets`, `received_qps` | Question paper packet tracking per session. Unique on `(exam_center_id, date, session, subject_code)`. |
+| `orders` | `exam_center_id`, `staff_id`, `order_type`, `date`, `session`, `order_key`, `sent_at` | Office order dispatch records linking a staff member to an order type, date, and session. |
+| `e_marksheets` | `exam_center_id`, `sheet_no`, `subject_name`, `scheme`, `paper_code`, `file_name`, `processed_at` | Electronic mark-sheet records uploaded and processed per subject and scheme. Indexed on `paper_code`. |
 
 ### Billing
 
 | Table | Key Columns | Description |
 |---|---|---|
-| `payments` | `org_id`, `plan_id`, `plan_name`, `amount`, `status`, `razorpay_order_id`, `razorpay_payment_id`, `promo_code_id` | Subscription payment records. `razorpay_order_id` has a unique index for idempotent webhook handling. |
+| `payments` | `org_id`, `plan_id`, `plan_name`, `amount`, `status`, `razorpay_order_id`, `razorpay_payment_id`, `promo_code_id` | Subscription payment records. `razorpay_order_id` has a unique index for idempotent payment verification. |
 | `promo_codes` | `code`, `type`, `duration_days`, `amount`, `is_used`, `used_by_org_id`, `expires_at` | Discount codes redeemable at checkout. `code` is unique. One-time use — `is_used` is set to `true` after redemption. |
 
 ### Audit & Observability

@@ -1,5 +1,5 @@
 ---
-title: "Office Orders: Generate and Email Duty Orders"
+title: "Office Orders: Generate and Email Staff Duty Orders"
 sidebarTitle: "Office Orders"
 description: "Generate official duty orders for supervisors, relievers, and chief officers, then email them via Resend with built-in per-exam-centre usage tracking."
 ---
@@ -8,14 +8,14 @@ Office Orders are formal duty appointment letters issued by the examination cent
 
 ## Order Types
 
-There are three distinct office order types, each rendered by the same underlying `supervision-order.tsx` component with a `type` prop:
+All three order types are rendered by the same underlying `supervision-order.tsx` component, which accepts a `type` prop. The `chief-order.tsx` and `reliever-order.tsx` files are thin wrappers that each render `<OrderReport type="chief" />` and `<OrderReport type="reliever" />` respectively.
 
 <CardGroup cols={2}>
   <Card title="Supervision Order" icon="user-check">
-    Duty order addressed to each **block supervisor**, listing their assigned examination dates and sessions in a table. References the `supervision` order type and fetches data from the `orders` table filtered by `order_type = 'supervision'`.
+    Duty order addressed to each **block supervisor**, listing their assigned examination dates and sessions in a duty schedule table. Fetches data from the `orders` table filtered by `order_type = 'supervision'`.
   </Card>
   <Card title="Reliever Order" icon="users">
-    Duty order addressed to each **reliever**, listing their scheduled relief dates and sessions. Uses the same layout as the Supervision Order but references `order_type = 'reliever'`.
+    Duty order addressed to each **reliever**, listing their scheduled relief dates and sessions. Uses the same layout as the Supervision Order but fetches from the `orders` table with `order_type = 'reliever'`.
   </Card>
   <Card title="Chief & Control Room Order" icon="shield-halved">
     Appointment letter for the **Chief Supervisor**, **Officer-in-Charge**, **Sealing Supervisor**, and **Exam Controller**. No duty schedule table is included — these officers are appointed for the full examination period. Officers are entered manually via the input form since they are not stored in the `orders` table.
@@ -102,11 +102,14 @@ Every sent email is recorded in the `email_logs` table for auditing and quota tr
 |--------|------|-------------|
 | `org_id` | `uuid` | Organisation that sent the email |
 | `exam_center_id` | `uuid` | Exam centre the order was sent from |
-| `user_id` | `uuid` | User who triggered the send |
+| `user_id` | `text` | User who triggered the send |
 | `recipient_email` | `text` | Recipient's email address |
 | `recipient_name` | `text` | Recipient's display name |
 | `subject` | `text` | Email subject line |
 | `order_type` | `text` | `supervision`, `reliever`, or `chief` |
+| `order_key` | `text` | The order reference key used when sending |
+| `status` | `text` | Send status recorded after the API call |
+| `error_message` | `text` | Error detail if the send failed |
 | `sent_at` | `timestamptz` | Timestamp of the send attempt |
 
 The **Email Usage Stats** widget at the top of the Office Order Mail page reads from this table and displays how many emails have been sent from the current exam centre.

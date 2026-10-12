@@ -1,5 +1,5 @@
 ---
-title: "Exam Day Dashboard – Live Operations Overview"
+title: "Exam Day Dashboard: Real-Time Exam Operations View"
 sidebarTitle: "Dashboard"
 description: "Monitor real-time exam center statistics, attendance rates, copy cases, block utilization, and subject-wise enrollment from a single live dashboard."
 ---
@@ -119,16 +119,20 @@ All dashboard data is retrieved from the `getExamOfficerDashboard` server action
 
 ```typescript
 interface ExamOfficerDashboardData {
-  examCenter: { id; code; name; season; year; officerIncharge; sealingSupervisor; ... };
-  metrics: { totalStudents; totalExaminees; totalStaff; totalBlocks; totalSubjects; ... };
+  examCenter: { id; code; name; season; year; officerIncharge; sealingSupervisor; distCenterCode; distCenterName; startDate; endDate; departments };
+  metrics: { totalStudents; totalExaminees; totalStaff; totalBlocks; totalSubjects; totalConnectedInstitutes; totalExamDays; totalSessions; totalPapers; totalAllocations; totalOrders };
   departmentDistribution: Array<{ department; staffCount; percentage }>;
   sessionDistribution: Array<{ date; morning; afternoon; total }>;
-  subjectEnrollment: { highest: [...]; lowest: [...] };
+  subjectEnrollment: { highest: Array<{ code; name; students; scheme }>; lowest: Array<{ code; name; students; scheme }> };
+  attendanceExtremes: { highest: { date; session; students; subjectCode; subjectName }; lowest: { date; session; students; subjectCode; subjectName } };
   blockUtilization: Array<{ blockNo; location; strength; totalAllocated; utilization }>;
   staffDuty: { totalSupervisors; totalRelievers; onDutyToday; available };
   qpInventoryStatus: { totalExpected; totalReceived; pending; completion };
-  malpracticeCases: { total; pending; resolved; byDate: [...] };
-  realtimeStatus: { currentSession; currentDate; examsInProgress; attendanceRate };
+  dailySchedule: Array<{ date; session; subjects; students; blocks }>;
+  malpracticeCases: { total; pending; resolved; byDate: Array<{ date; count }> };
+  connectedInstitutes: Array<{ code; name; students; isActive }>;
+  realtimeStatus: { currentSession; currentDate; examsInProgress; examsCompleted; attendanceRate };
+  message: string;
   lastUpdated: Date;
 }
 ```

@@ -72,8 +72,8 @@ Process a specific uploaded e-marksheet file. Deletes existing e-marksheet recor
 ### Example
 
 ```bash
-curl -X POST https://api.testforge.app/api/emarksheet/process \
-  -H "Authorization: Bearer <token>" \
+curl -X POST http://localhost:8000/api/emarksheet/process \
+  --cookie "better-auth.session_token=<your_session_token>" \
   -H "Content-Type: application/json" \
   -d '{"stored_filename": "emarksheet_ec-0001_d4e5f6a7.xlsx"}'
 ```

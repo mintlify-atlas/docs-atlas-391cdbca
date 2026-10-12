@@ -19,8 +19,8 @@ Upload a file to TestForge. The file is validated, sanitized, and stored; no pro
 | `file_type` | Format |
 |---|---|
 | `timetable` | `.html` / `.htm` |
-| `seating_chart` | `.xlsx` / `.xls` |
-| `seating_arrangement` | `.xlsx` / `.xls` |
+| `seatingchart` | `.xlsx` / `.xls` |
+| `seatingarrangement` | `.xlsx` / `.xls` |
 | `inventory` | `.xlsx` / `.xls` |
 | `emarksheet` | `.xlsx` / `.xls` |
 
@@ -88,8 +88,8 @@ This endpoint accepts `multipart/form-data`.
 ### Example
 
 ```bash
-curl -X POST https://api.testforge.app/api/upload/ \
-  -H "Authorization: Bearer <token>" \
+curl -X POST http://localhost:8000/api/upload/ \
+  --cookie "better-auth.session_token=<your_session_token>" \
   -F "file=@/path/to/timetable.html" \
   -F "file_type=timetable"
 ```
@@ -147,8 +147,8 @@ Returns `404` if the file record is not found in the database or if the file doe
 
 ```bash
 curl -X GET \
-  "https://api.testforge.app/api/upload/download?file_name=timetable_ec-0001_a1b2c3d4.html&file_type=timetable" \
-  -H "Authorization: Bearer <token>" \
+  "http://localhost:8000/api/upload/download?file_name=timetable_ec-0001_a1b2c3d4.html&file_type=timetable" \
+  --cookie "better-auth.session_token=<your_session_token>" \
   --output timetable_downloaded.html
 ```
 
@@ -214,8 +214,8 @@ Check the upload and processing status for a given file type. Useful for polling
 
 ```bash
 curl -X GET \
-  "https://api.testforge.app/api/upload/status?file_type=timetable" \
-  -H "Authorization: Bearer <token>"
+  "http://localhost:8000/api/upload/status?file_type=timetable" \
+  --cookie "better-auth.session_token=<your_session_token>"
 ```
 
 **Sample response — file processed**

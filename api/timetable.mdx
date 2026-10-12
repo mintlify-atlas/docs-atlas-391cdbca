@@ -25,7 +25,7 @@ Trigger processing of the most recently uploaded timetable file for the authenti
 1. **Subject cache load** — All subjects from the `subjects` table (where `is_deleted = false`) are loaded into an in-memory dictionary keyed by `code_scheme` (both original and hyphen-normalized variants). This makes every per-entry lookup an O(1) dict access.
 2. **HTML parse** — The stored HTML file is parsed with BeautifulSoup. The parser looks for `<div>` headers containing `Date:` and `Day:` fields, then reads `<table>` elements that follow them. Each `<td>` row with a numeric SR column is extracted as a candidate entry. A secondary alternative parser handles non-standard layouts.
 3. **Entry extraction** — For each valid row: `exam_day`, `date` (reformatted to `YYYY-MM-DD`), `session` (`Morning` / `Afternoon` based on header keywords or emoji), `time_slot`, `subject_code`, `subject_name`, and `scheme` are captured. A single subject row that lists multiple schemes generates one entry per scheme.
-4. **Batch insert** — All previous timetable entries for the exam center are deleted, then new entries are inserted in batches of **250 rows** (`BATCH_SIZE = 250`). A commit is issued every **5 batches** (`COMMIT_INTERVAL = 5`). A 50 ms pause between batches prevents connection timeouts on NeonDB free tier.
+4. **Batch insert** — All previous timetable entries for the exam center are deleted, then new entries are inserted in batches of **250 rows** (`BATCH_SIZE = 250`). A 50 ms pause between batches prevents connection timeouts on NeonDB free tier.
 5. **Status update** — The corresponding `uploads` record is set to `PROCESSED` with the final `record_count`.
 
 ### Request
@@ -62,9 +62,8 @@ No request body is required. The endpoint reads the exam center identity from th
 ### Example
 
 ```bash
-curl -X POST https://api.testforge.app/api/timetable/process \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json"
+curl -X POST http://localhost:8000/api/timetable/process \
+  --cookie "better-auth.session_token=<your_session_token>"
 ```
 
 **Sample response**

@@ -87,8 +87,8 @@ Process a specific uploaded seating chart file. Parses student records from the 
 #### Example
 
 ```bash
-curl -X POST https://api.testforge.app/api/seatingchart/process \
-  -H "Authorization: Bearer <token>" \
+curl -X POST http://localhost:8000/api/seatingchart/process \
+  --cookie "better-auth.session_token=<your_session_token>" \
   -H "Content-Type: application/json" \
   -d '{"stored_filename": "seatingchart_ec-0001_a1b2c3d4.xlsx"}'
 ```
@@ -208,8 +208,8 @@ Parse the uploaded seating arrangement file, validate each student's paper codes
 #### Example
 
 ```bash
-curl -X POST https://api.testforge.app/api/seatingarrangement/process \
-  -H "Authorization: Bearer <token>" \
+curl -X POST http://localhost:8000/api/seatingarrangement/process \
+  --cookie "better-auth.session_token=<your_session_token>" \
   -H "Content-Type: application/json" \
   -d '{"stored_filename": "seatingarrangement_ec-0001_b2c3d4e5.xlsx"}'
 ```
@@ -295,8 +295,8 @@ When `CONFIRM_FIX` is chosen, the processor overwrites each mismatched student's
 #### Example
 
 ```bash
-curl -X POST https://api.testforge.app/api/seatingarrangement/fix-mismatches \
-  -H "Authorization: Bearer <token>" \
+curl -X POST http://localhost:8000/api/seatingarrangement/fix-mismatches \
+  --cookie "better-auth.session_token=<your_session_token>" \
   -H "Content-Type: application/json" \
   -d '{"temp_session_id": "7f3a9b1c-...", "action": "CONFIRM_FIX"}'
 ```
@@ -360,8 +360,8 @@ Retrieve the current state of a mismatch correction session. Use this to inspect
 
 ```bash
 curl -X GET \
-  "https://api.testforge.app/api/seatingarrangement/temp-session/7f3a9b1c-..." \
-  -H "Authorization: Bearer <token>"
+  "http://localhost:8000/api/seatingarrangement/temp-session/7f3a9b1c-..." \
+  --cookie "better-auth.session_token=<your_session_token>"
 ```
 
   </Tab>

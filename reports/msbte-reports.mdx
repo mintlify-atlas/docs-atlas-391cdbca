@@ -1,21 +1,21 @@
 ---
-title: "MSBTE Reports: Generate Official F1–F22 Formats"
+title: "MSBTE Reports: Generate All Official F1–F22 Formats"
 sidebarTitle: "MSBTE Reports"
-description: "Generate all official MSBTE examination formats (F1–F22) from live database data. Print-ready A4 layouts with react-to-print — no manual data entry needed."
+description: "Generate all official MSBTE examination reports (F1–F22) from live database data. Print-ready A4 layouts with react-to-print — no manual data entry needed."
 ---
 
-TestForge generates every official MSBTE examination report — from examinee instructions to question paper packet accounting — directly from live data stored in your database. No spreadsheets, no manual entry. Navigate to **Reports → MSBTE Reports**, select the format you need, choose a date or session where required, and print a perfectly formatted A4 document in seconds.
+TestForge generates every official MSBTE examination report — from examinee instructions to question paper packet accounting — directly from live data stored in your database. No spreadsheets, no manual entry. Navigate to **Reports → MSBTE Reports**, select the format you need, choose a date where required, and print a perfectly formatted A4 document in seconds.
 
 ## Available Formats
 
-All formats are rendered using the `msbte-report-layout` wrapper, which enforces MSBTE's standard A4 portrait layout with the official MSBTE logo, examination season/year, exam center name and code, date, session metadata, and signature fields in the footer.
+All formats are rendered using the `msbte-report-layout` wrapper, which enforces MSBTE's standard A4 portrait layout with the official MSBTE logo, examination season/year, exam centre name and code, date, session metadata, and signature fields in the footer.
 
 | Format | Name | Description |
 |--------|------|-------------|
-| **F1** | Instructions to Examinees | Two-page document listing General, Answer Book, and Special instructions for examinees. Displayed at the examination hall entrance. |
-| **F2** | QP Bundle Receipt (Controller → DC) | Receipt issued by the Officer-in-Charge on receiving question paper bundles from the Controller of Examination at the Distribution Centre. |
-| **F3** | QP Bundle Receipt (EC → Controller) | Receipt issued by the Exam Centre on receiving QP bundles from the Controller, including per-session packet counts. |
-| **F3A** | QP Receipt Acknowledgement | Supplementary acknowledgement for question paper packets at the exam centre level. |
+| **F1** | Instructions to Examinees | Two-page document listing General Instructions, Instructions regarding writing answer books, and Special Instructions for examinees. Displayed at the examination hall entrance. |
+| **F2** | QP Bundle Receipt (Controller to DC) | Receipt issued by the Officer-in-Charge on receiving question paper bundles from the Controller of Examination. Shows the exam centre code, day, date, session, bundle details, and total bundle count, using the actually received packet counts. |
+| **F3** | QP Bundle Receipt (EC to Controller) | Receipt issued by the Exam Centre on receiving QP bundles from the Controller. Same layout as F2 but uses the expected packet counts from the inventory, reflecting bundles as per the label on each bundle. |
+| **F3A** | QP Packet Receipt Verification | Detailed bundle-opening record given by the Officer-in-Charge to the DC. Shows the time of opening for each session, the QP code and packet count as per the label on the bundle, the actual QP code and packet count found inside, and a Matched/Discrepancy remark for each session. |
 | **F4** | Block Allocation Statement | Block-wise student allocation summary including subject codes, seat ranges, and assigned supervisors per session. |
 | **F5** | Supervisor Attendance | Attendance register for all supervisors and relievers reporting for duty at the examination centre. |
 | **F6** | Reliever Statement | Reliever duty statement listing reliever names, assigned blocks, and session-wise duty periods. |
@@ -47,7 +47,7 @@ Every MSBTE report fetches its data live from the database at the time of genera
 - **Exam centre metadata** (name, code, season, year, distribution centre code) is resolved from the authenticated user's exam centre record.
 
 <Note>
-Reports that require a specific date or session — such as F2, F3, F9, and F10 — display a session selector screen before rendering the report. Only dates that have inventory or timetable data are shown in the selector.
+Reports that require a specific date — such as F2, F3, F3A, and F9 — display a date selector screen before rendering the report. Only dates that have inventory or timetable data are shown in the selector.
 </Note>
 
 ## Printing a Report
@@ -58,16 +58,16 @@ All MSBTE reports share the same print workflow powered by the `react-to-print` 
   <Step title="Open the report page">
     Navigate to **Reports → MSBTE Reports** and select the format you want to print (e.g., Format 2).
   </Step>
-  <Step title="Select date and session (if prompted)">
-    For date-dependent reports, choose the examination date from the available dates dropdown. Session defaults to **Morning**; change it if needed.
+  <Step title="Select a date (if prompted)">
+    For date-dependent reports, choose the examination date from the available dates dropdown. Only dates with existing inventory or timetable data appear in the list.
   </Step>
   <Step title="Review the on-screen preview">
     The report renders as an A4 preview on screen, populated with live data. Verify the exam centre name, code, date, and content before printing.
   </Step>
   <Step title="Set the number of copies">
-    Use the **Copies per block** spinner in the control bar to choose how many copies to print (1–5). Copy 1 is labelled "Forwarded with answer book bundle"; Copy 2 is "For office record".
+    Use the **Copies per block** number input in the control bar to choose how many copies to print (1–5). Copy 1 is labelled "Forwarded with answer book bundle"; Copy 2 is "For office record".
   </Step>
-  <Step title="Click Print">
+  <Step title="Click Print All">
     Click the **Print All** button. The browser's native print dialog opens with the page size pre-set to **A4 portrait**. Select your printer and confirm.
   </Step>
 </Steps>
@@ -80,7 +80,7 @@ The `msbte-report-layout` wrapper enforces exact A4 dimensions (`210 mm × 297 m
 
 The `msbte-report-layout.tsx` component exports two report primitives:
 
-- **`ReportLayout`** — wraps a single-page report with a standardised header (MSBTE logo, exam season/year, centre name/code, date, session) and an optional footer with supervisor and officer signature fields.
-- **`MultiPageReport`** — renders an array of `ReportPageData` objects as individual A4 pages, with per-page headers derived from each page's data. Used for multi-page formats such as F1 (two instruction pages) and block allocation sheets with paginated seat grids.
+- **`ReportLayout`** (default export) — wraps a single-page report with a standardised header (MSBTE logo, exam season/year, centre name/code, date, session) and an optional footer with supervisor and officer signature fields.
+- **`MultiPageReport`** (named export) — renders an array of `ReportPageData` objects as individual A4 pages, with per-page headers derived from each page's data. Used for multi-page formats such as F1 (two instruction pages) and block allocation sheets with paginated seat grids.
 
-Both components accept a `compact` prop that reduces padding and font size from `11pt` to `10pt` to fit more content on a single page without altering the A4 boundary.
+Both components accept a `compact` prop that reduces padding and font size from `11pt` to `10pt` to fit more content on a single page without altering the A4 boundary. Both portrait (`210 mm × 297 mm`) and landscape (`297 mm × 210 mm`) orientations are supported via the `printLandscape` prop.
