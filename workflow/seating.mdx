@@ -1,0 +1,163 @@
+---
+title: "Seating Chart & Seating Arrangement Import — TestForge"
+sidebarTitle: "Seating"
+description: "Import the institute seating chart and MSBTE seating arrangement. Learn student validation, mismatch detection, and the temp-session correction flow."
+---
+
+TestForge uses two distinct seating files at different stages of the workflow. Both serve different purposes, come from different sources, and are processed by separate backend systems. Understanding the difference between them before uploading is critical to avoid data conflicts.
+
+<Note>
+  **Seating Chart** comes from your own institute and maps each student to a physical seat number along with their enrolled subjects. **Seating Arrangement** is the official MSBTE document that defines the final allocation of students to exam centers — it is used for cross-validation, not for initial data entry.
+</Note>
+
+## The Two Seating Files
+
+### 1. Seating Chart (from your institute)
+
+The seating chart is an Excel file prepared by each connected institute. It lists every student who will appear at this exam center with their:
+
+| Column | Description | Required |
+|--------|-------------|----------|
+| `Seat Number` | Unique integer seat identifier | Yes |
+| `Enrollment Number` | Student enrollment ID | Recommended |
+| `Name` | Student full name | Recommended |
+| `Scheme` | Curriculum scheme code (e.g., `K-17`) | Yes |
+| `Subject Appearing For` | Comma-separated subject abbreviations | Yes |
+
+The `SeatingChartProcessor` maps subject abbreviations to subject codes using the pre-loaded scheme data cache (sourced from the `subjects` table). This creates the `sub_codes` JSON array stored on each student record.
+
+### 2. Seating Arrangement (from MSBTE)
+
+The seating arrangement is the **official MSBTE Excel file** that specifies the final seat allocation. It contains one row per paper per student:
+
+```text
+SR No | Seat Number | Inst Code | Course Code | Semester | Master Code | Paper Code
+```
+
+The `SeatingArrangementProcessor` groups all rows by student seat number, builds a list of paper codes per student, and then **validates those paper codes against the `sub_codes` already stored in the database** from the seating chart import.
+
+<Warning>
+  The seating arrangement import step is for **verification only**. It does not replace the seating chart — it cross-checks against it. Always import the seating chart before importing the seating arrangement.
+</Warning>
+
+## Seating Chart Import Flow
+
+<Steps>
+  <Step title="Open Seating Chart page">
+    Navigate to **Exam Setup → Seating Chart**. If no data exists yet, the upload panel is displayed. Otherwise, click **Upload New** to import an additional institute's chart.
+  </Step>
+
+  <Step title="Select the connected institute">
+    Each seating chart upload is scoped to a specific **connected institute**. Select the institute from the dropdown before choosing the file. The `connected_institute_id` is attached to the upload record and used during processing to link students to the correct institute.
+  </Step>
+
+  <Step title="Upload the Excel file">
+    Upload the institute's seating chart Excel file. Accepted formats: `.xlsx`, `.xls`. The file is stored on the server and the upload record is created with status `PENDING`.
+  </Step>
+
+  <Step title="Process the file">
+    Click **Process**. The backend calls `POST /seatingchart/process` with the `stored_filename`. The `SeatingChartProcessor`:
+
+    1. Loads scheme data from the `subjects` table into an in-memory map
+    2. Reads the Excel file with Pandas into a DataFrame
+    3. Parses each row: seat number, enrollment number, name, scheme, subject string
+    4. Converts subject abbreviations to subject codes using the scheme map
+    5. Batches `INSERT` and `UPDATE` operations in groups of 250 rows
+    6. Runs a single SQL `WITH` statement to recalculate all timetable `total_students` counts
+
+    The processor pauses 50 ms between batches to prevent connection timeouts on NeonDB's free tier.
+  </Step>
+
+  <Step title="Verify the results">
+    After processing, the seating chart table shows all imported students with their seat numbers, enrollment numbers, names, scheme badges, institute, and subject code pills. Use the institute and scheme filters to check each institute's data. Click any row to open a detail modal showing all subject codes and names.
+  </Step>
+</Steps>
+
+## Seating Arrangement Import Flow
+
+<Steps>
+  <Step title="Open Seating Arrangement page">
+    Navigate to **Exam Setup → Seating Arrangement**. This page is separate from the Seating Chart page.
+  </Step>
+
+  <Step title="Upload the MSBTE seating arrangement file">
+    Upload the official MSBTE Excel file containing the seating arrangement. The file must include the columns: `SR No`, `Seat Number`, `Inst Code`, `Course Code`, `Semester`, `Master Code`, `Paper Code`. Column detection is by name first, then positional fallback.
+  </Step>
+
+  <Step title="Process and validate">
+    The backend calls `POST /seatingarrangement/process`. The processor:
+
+    1. Parses the Excel file, grouping rows by `Seat Number`
+    2. Builds a scheme string from `Course Code + Semester + Master Code` for each student
+    3. Collects all `Paper Code` values into a list per student
+    4. Queries the database for each student's existing `sub_codes`
+    5. Compares the paper codes from MSBTE against the stored sub codes
+
+    If all students match exactly, the arrangement is saved immediately and timetable counts are updated.
+  </Step>
+
+  <Step title="Resolve mismatches (if any)">
+    If the processor finds any discrepancies between MSBTE paper codes and the database sub codes, it does **not** save the data. Instead, it returns a response with `status: "needs_correction"` and a `temp_session_id`:
+
+    ```json
+    {
+      "status": "needs_correction",
+      "data": {
+        "temp_session_id": "550e8400-e29b-41d4-a716-446655440000",
+        "total_students": 312,
+        "mismatch_count": 7,
+        "mismatches": [
+          {
+            "seat_number": 10045,
+            "expected_subjects": [22317, 22318, 22319],
+            "actual_subjects": [22317, 22320],
+            "missing_subjects": [22318, 22319],
+            "extra_subjects": [22320],
+            "issue_type": "BOTH_MISSING_AND_EXTRA"
+          }
+        ]
+      }
+    }
+    ```
+
+    Review the mismatch list in the UI. Each entry shows the seat number, the subjects TestForge has on record (`expected_subjects`), the subjects MSBTE lists (`actual_subjects`), and which specific codes are missing or extra.
+  </Step>
+
+  <Step title="Confirm fix or cancel">
+    Choose one of two actions:
+
+    - **Confirm Fix (`CONFIRM_FIX`)** — The processor auto-corrects using the database as the source of truth. For any seat with mismatches, the database `sub_codes` and `scheme` replace the MSBTE paper codes. New students not in the database keep their MSBTE data.
+    - **Cancel (`CANCEL`)** — The temp session is discarded. No changes are made to the database.
+
+    The `temp_session_id` expires once either action is taken.
+  </Step>
+</Steps>
+
+## Mismatch Issue Types
+
+The processor classifies each discrepancy into one of three issue types:
+
+| Issue Type | Meaning |
+|------------|---------|
+| `MISSING_SUBJECTS` | MSBTE lists fewer subjects than the database has for this student |
+| `EXTRA_SUBJECTS` | MSBTE lists subjects that are not in the database for this student |
+| `BOTH_MISSING_AND_EXTRA` | Both extra and missing subjects exist for this student |
+
+## Multi-Institute Support
+
+Each connected institute has its own seating chart. The processing pipeline supports uploading and processing multiple charts sequentially or in any order. After every chart is processed, the timetable student counts are recalculated to reflect the combined totals across all institutes.
+
+Statistics displayed on the Seating Chart page show:
+
+- **Students** — total student records in the database
+- **Institutes** — count of distinct connected institutes with seating data
+- **Schemes** — count of distinct scheme codes across all students
+
+## Backend API Endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/seatingchart/process` | Process a specific seating chart file by `stored_filename` |
+| `POST` | `/seatingarrangement/process` | Process the MSBTE seating arrangement file |
+| `POST` | `/seatingarrangement/fix-mismatches` | Apply `CONFIRM_FIX` or `CANCEL` to a temp session |
+| `GET` | `/seatingarrangement/temp-session/{id}` | Retrieve the current mismatch list for a session |

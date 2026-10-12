@@ -1,0 +1,148 @@
+---
+title: "Environment Variables — TestForge Configuration"
+sidebarTitle: "Environment"
+description: "Complete reference for all TestForge environment variables across the Next.js frontend and FastAPI backend, including auth, database, payments, and logging."
+---
+
+TestForge is split into two independently deployable services — a **Next.js frontend** and a **FastAPI backend** — each with its own `.env` file. Copy the relevant `.env.example` to `.env` in the respective directory and populate every required variable before starting the application.
+
+<Warning>
+  **Never set `TESTING=true` in production.** When `TESTING` is enabled, all authentication checks are bypassed and every request is automatically scoped to `TEST_EXAM_CENTER_ID`. This flag exists solely for local development and automated test runs.
+</Warning>
+
+<Tabs>
+  <Tab title="Frontend">
+    The frontend `.env` file lives at `frontend/.env`. Variables prefixed with `NEXT_PUBLIC_` are embedded into the client-side JavaScript bundle at build time; all others remain server-side only.
+
+    ### Database
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `DATABASE_URL` | PostgreSQL connection string used by Drizzle ORM for schema management and auth session storage. | Required | `postgresql://user:pass@localhost:5432/testforge` |
+
+    ### Authentication
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `BETTER_AUTH_SECRET` | Random secret used by Better Auth to sign and verify session tokens. Use a minimum of 32 characters. | Required | `a8f3...` (32+ char random string) |
+    | `BETTER_AUTH_URL` | Base URL of the auth service — typically the frontend origin in development. | Required | `http://localhost:3000` |
+    | `GOOGLE_CLIENT_ID` | OAuth 2.0 client ID from Google Cloud Console for Google Sign-In. | Required | `123456789-abc.apps.googleusercontent.com` |
+    | `GOOGLE_CLIENT_SECRET` | OAuth 2.0 client secret corresponding to `GOOGLE_CLIENT_ID`. | Required | `GOCSPX-...` |
+
+    ### Payments (Razorpay)
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Razorpay publishable key — embedded in the client bundle to initialise the Razorpay checkout widget. | Required | `rzp_live_xxxxxxxxxxxx` |
+    | `RAZORPAY_KEY_ID` | Razorpay key ID used server-side to create orders and verify signatures. | Required | `rzp_live_xxxxxxxxxxxx` |
+    | `RAZORPAY_KEY_SECRET` | Razorpay key secret used for HMAC signature verification of webhooks and API calls. | Required | `xxxxxxxxxxxxxxxxxxxxxxxx` |
+    | `RAZORPAY_WEBHOOK_SECRET` | Shared secret configured on the Razorpay dashboard used to validate incoming webhook payloads. | Required | `whsec_xxxxxxxxxxxxxxxx` |
+
+    ### Email (Resend)
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `RESEND_API_KEY` | API key for the [Resend](https://resend.com) transactional email service. | Required | `re_xxxxxxxxxxxxxxxxxxxx` |
+    | `EMAIL_FROM` | Server-side sender address passed to Resend when dispatching emails. | Required | `TestForge <noreply@testforge.in>` |
+    | `NEXT_PUBLIC_EMAIL_FROM` | Client-accessible sender address (used for display purposes). | Required | `TestForge <noreply@testforge.in>` |
+    | `REPLY_TO` | Server-side reply-to email address appended to outbound messages. | Optional | `support@testforge.in` |
+    | `NEXT_PUBLIC_REPLY_TO` | Client-accessible reply-to address (used for display purposes). | Optional | `support@testforge.in` |
+
+    ### URLs
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `NEXT_PUBLIC_APP_URL` | Public-facing base URL of the frontend application. | Required | `http://localhost:3000` |
+    | `NEXT_PUBLIC_HOSTED_URL` | Canonical production URL. Used for generating absolute links in emails and redirects. | Required | `https://testforge.in` |
+    | `NEXT_PUBLIC_BACKEND_URL` | URL of the FastAPI backend service reachable from the browser and server-side API routes. | Required | `http://localhost:8000` |
+
+    ### Runtime & Docker
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `NODE_ENV` | Node.js environment mode. Set to `production` for deployed builds. | Required | `production` |
+    | `LOG_LEVEL` | Controls frontend server-side log verbosity. Accepts `INFO`, `DEBUG`, `WARNING`, or `ERROR`. | Optional | `INFO` |
+    | `IS_DOCKER` | Set to `true` when the frontend container is started via Docker Compose. Adjusts internal service URLs. | Optional | `true` |
+  </Tab>
+
+  <Tab title="Backend">
+    The backend `.env` file lives at `backend/.env`. All variables are read at startup by `backend/config.py` via `python-dotenv`.
+
+    ### Database
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `DATABASE_URL` | Full PostgreSQL DSN for SQLAlchemy. Defaults to `postgresql://postgres:password@localhost:5432/testforge` if unset. | Required | `postgresql://user:pass@localhost:5432/testforge` |
+
+    ### Application
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `DEBUG` | Enables FastAPI/Uvicorn debug mode with detailed error responses. Set to `true` only in development. | Optional | `False` |
+    | `TESTING` | When `true`, skips all authentication middleware and uses `TEST_EXAM_CENTER_ID` to scope requests. **Never enable in production.** | Optional | `False` |
+    | `TEST_EXAM_CENTER_ID` | UUID of the exam center used when `TESTING=true`. Requests are automatically associated with this center. | Optional | `a3e5c386-efbb-373e-36d0-1bc812bde9d2` |
+
+    ### File Uploads
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `UPLOAD_DIR` | Directory where uploaded files (question papers, timetables, student data) are stored. Defaults to `./uploads`. | Optional | `./uploads` |
+    | `MAX_UPLOAD_SIZE` | Maximum allowed upload size in bytes. Defaults to `10485760` (10 MB). | Optional | `10485760` |
+
+    ### Security
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `SECRET_KEY` | Secret key used for signing internal tokens. Use a long, random string in production. | Required | `change-me-to-a-long-random-secret` |
+    | `CORS_ORIGINS` | Comma-separated list of allowed CORS origins. Must include the frontend URL. | Required | `http://localhost:3000,https://testforge.in` |
+
+    ### URLs
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `NEXT_PUBLIC_APP_URL` | Frontend URL used by the backend to construct redirect and callback links. | Required | `http://localhost:3000` |
+
+    ### Logging
+
+    | Variable | Description | Required | Example |
+    |---|---|---|---|
+    | `LOG_LEVEL` | Python logging level for the backend process. Accepts `INFO`, `DEBUG`, `WARNING`, or `ERROR`. | Optional | `INFO` |
+  </Tab>
+</Tabs>
+
+## Minimal `.env` for Local Development
+
+The following snippet shows the smallest working configuration to run both services locally with Docker Compose.
+
+```env
+# shared
+DATABASE_URL=postgresql://testforge:secret@localhost:4935/testforge
+
+# frontend/.env
+BETTER_AUTH_SECRET=replace-with-32-char-random-secret
+BETTER_AUTH_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
+RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
+RAZORPAY_KEY_SECRET=your-razorpay-secret
+RAZORPAY_WEBHOOK_SECRET=your-webhook-secret
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxx
+EMAIL_FROM=TestForge <noreply@example.com>
+NEXT_PUBLIC_EMAIL_FROM=TestForge <noreply@example.com>
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_HOSTED_URL=http://localhost:3000
+NEXT_PUBLIC_BACKEND_URL=http://localhost:4936
+NODE_ENV=development
+
+# backend/.env
+SECRET_KEY=replace-with-a-long-random-secret
+CORS_ORIGINS=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+DEBUG=False
+TESTING=False
+```
+
+<Note>
+  The `NEXT_PUBLIC_` prefix on frontend variables is a Next.js convention. Any variable with this prefix is statically inlined into the client bundle during `next build` — treat them as **public** and never store secrets in them.
+</Note>

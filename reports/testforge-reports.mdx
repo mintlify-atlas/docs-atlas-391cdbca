@@ -1,0 +1,142 @@
+---
+title: "TestForge Reports: Internal Exam Report Formats"
+sidebarTitle: "TestForge Reports"
+description: "Generate TestForge internal reports — block allocation, daily summary, staff duty, and supervision schedules — for operational use during MSBTE examinations."
+---
+
+TestForge Reports are the platform's own internal report formats, separate from the official MSBTE F-series. These reports are designed for operational use by the exam centre team: planning block layouts before the exam, briefing supervisors, tracking attendance during the day, and producing duty rosters for the entire examination period. All reports are rendered using the `testforge-report-layout` wrapper, which applies a clean Inter-font A4 layout branded with your exam centre name.
+
+<CardGroup cols={2}>
+  <Card title="Block Allocation Report" icon="table-cells">
+    Block-wise student seating summary for a selected date and session, including supervisor names, subject-to-block mapping, seat ranges, and an optional visual seat grid for each block.
+  </Card>
+  <Card title="Daily Summary Report" icon="chart-bar">
+    Per-session attendance overview showing total, present, absent, and copy-case counts for every subject-block combination, with a grand-total attendance rate.
+  </Card>
+  <Card title="Staff Duty Report" icon="id-card">
+    Complete duty roster for all supervisors across the entire examination period, showing each staff member's assigned dates, sessions, and student counts.
+  </Card>
+  <Card title="Supervision Report" icon="calendar-days">
+    Supervisor-wise duty schedule for a selected session, grouped by supervisor and showing their assigned block, location, subject, student count, and timeslot.
+  </Card>
+  <Card title="Subject Allocation Report" icon="book-open">
+    Subject-to-block mapping report listing which subjects (by code and scheme) are allocated to which blocks, useful for question paper distribution planning.
+  </Card>
+  <Card title="QP Summary Report" icon="inbox-stack">
+    Question paper packet summary per session, showing expected and received packet counts per subject for reconciliation before the session begins.
+  </Card>
+  <Card title="Blank Absent Form" icon="file-circle-xmark">
+    Pre-formatted blank absentee statement for a block, ready to be filled in manually on exam day when the digital record is not yet available.
+  </Card>
+  <Card title="Blank Reliever Form" icon="file-lines">
+    Pre-formatted blank reliever duty form for a session, used when a reliever needs a paper record of their assigned duty before orders are distributed.
+  </Card>
+</CardGroup>
+
+---
+
+## Block Allocation Report
+
+The Block Allocation report (`block-allocation.tsx`) generates two types of output in a single print run:
+
+1. **Block Allotment Summary** — A tabular overview of all blocks for the selected date and session, sorted by block number. Each row shows block number, location, supervisor name, scheme, subject code and name, seat range, student count, and timeslot. A grand total row summarises blocks, subjects, and students.
+
+2. **Block Detail Pages** — One page per block showing a header grid (date, session, block number, location, supervisor, total students), a per-subject breakdown table, and a visual seat grid. The seat grid is rendered using one of four configurable seating templates that control the direction in which seat numbers flow through the columns.
+
+**Seating templates:**
+
+| Template | Fill Direction |
+|----------|---------------|
+| 1 (default) | Right-to-left, alternating up/down per column |
+| 2 | Right-to-left, always top-to-bottom |
+| 3 | Left-to-right, always top-to-bottom |
+| 4 | Left-to-right, alternating up/down per column |
+
+The template and column distribution for each block are configured in the Block Management module and stored in the `blocks` table.
+
+<Steps>
+  <Step title="Navigate to the report">
+    Go to **Reports → Block Allocation**. The page loads available timetable dates automatically.
+  </Step>
+  <Step title="Select date and session">
+    Choose the examination date and session (Morning, Afternoon, or All) from the session selector. Click **Generate**.
+  </Step>
+  <Step title="Review the allotment summary">
+    The summary table renders first. Verify block counts, student totals, and supervisor assignments.
+  </Step>
+  <Step title="Set copies and print">
+    Use the **Copies per block** control to set how many copies of each block detail page you need, then click **Print All**.
+  </Step>
+</Steps>
+
+---
+
+## Daily Summary Report
+
+The Daily Summary report (`daily-summary.tsx`) provides an at-a-glance attendance overview for a single date and session. It combines allocation data with live absent numbers and copy-case counts fetched from the timetable entries.
+
+Each row in the report represents one subject-block combination and shows:
+- Block number and location
+- Subject code, name, and scheme
+- Supervisor name
+- Total, present, absent, and copy-case student counts
+- A remarks column
+
+The footer row shows the grand totals and an overall attendance rate percentage. If the data spans more than 8 rows, the report automatically paginates across multiple A4 pages.
+
+<Note>
+Absent numbers and copy-case counts are only populated after they have been recorded on the **Exam Day Dashboard**. Running this report before the session ends will show zeroes for absent and copy-case columns.
+</Note>
+
+---
+
+## Staff Duty Report
+
+The Staff Duty report (`staff-duty.tsx`) produces a complete duty roster covering the entire examination period — not just a single date or session. It loads all allocations and all staff records simultaneously, then groups duty entries by staff member, sorted alphabetically by name.
+
+Each staff row shows:
+- Serial number, staff name, UID, and department
+- One sub-row per unique date-session combination the staff member is assigned to, with the session badge (Morning / Afternoon) and student count
+
+The report auto-loads on page open without requiring a date selection, since it spans all dates. It supports 1–5 copies and shows a grand total of staff and students in the footer.
+
+---
+
+## Supervision Report
+
+The Supervision report (`supervision.tsx`) is a per-session duty schedule grouped by supervisor. Unlike the Staff Duty report (which spans all dates), the Supervision report is for a single selected date and session.
+
+Rows are grouped by supervisor — each supervisor appears once, with their block, location, and UID shown with `rowspan`, and one sub-row per subject assigned to that block. The footer shows totals for supervisors, blocks, and students. A **"Display at Examination Centre"** label appears in the page footer, as this report is typically posted on the notice board.
+
+<Tip>
+Generate the Supervision report the morning before each examination session and post it outside the examination hall. Supervisors can check their assigned block and location without needing to contact the control room.
+</Tip>
+
+---
+
+## Report Layout Architecture
+
+All TestForge reports use `testforge-report-layout.tsx`, which exports:
+
+- **`ReportLayout`** — wraps a single-page report with a header showing the exam centre name prominently, metadata fields (code, season, year, date, session), report title, and an optional footer with signature fields and a "Generated using TestForge®" credit.
+- **`MultiPageReport`** — renders paginated reports from a `ReportPageData[]` array. Each page merges the shared header config with per-page metadata (e.g., page number, block name, attendance rate). Supports a configurable copies control (1–5) and an optional copy-info footer label.
+
+The TestForge layout uses **Inter** as the body font (versus Times New Roman in the MSBTE layout) to distinguish internal reports from official MSBTE formats.
+
+```typescript
+// Minimum header config for any TestForge report
+header={{
+  title: 'DAILY EXAM SUMMARY',
+  description: 'Day-wise examination statistics and attendance overview',
+  examCenter: {
+    name: examCenter?.name,
+    code: examCenter?.code,
+    season: examCenter?.season,
+    year: examCenter?.examYear,
+    session: 'Morning',
+    date: new Date(selectedDate),
+  },
+}}
+```
+
+Both portrait (`210 mm × 297 mm`) and landscape (`297 mm × 210 mm`) orientations are supported via the `printLandscape` prop.

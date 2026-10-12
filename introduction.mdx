@@ -1,0 +1,114 @@
+---
+title: "TestForge: The MSBTE Examination Management Platform"
+sidebarTitle: "Introduction"
+description: "TestForge automates the MSBTE exam lifecycle — timetable upload to F1–F22 reports — replacing weeks of manual spreadsheet work with one unified platform."
+---
+
+TestForge is a modern examination management platform built exclusively for **MSBTE-affiliated institutes**. It replaces the maze of spreadsheets, manual registers, and disconnected tools that exam officers rely on today with a single, integrated workflow — from uploading the timetable to printing the final MSBTE reports.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run TestForge locally in under 15 minutes with Node.js, Python, and Docker.
+  </Card>
+  <Card title="Deployment" icon="server" href="/deployment">
+    Deploy to production with a single `docker-compose up -d` command.
+  </Card>
+  <Card title="Workflow Overview" icon="arrow-progress" href="/workflow/overview">
+    Understand the end-to-end examination workflow from timetable to reports.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the FastAPI backend endpoints powering the platform.
+  </Card>
+</CardGroup>
+
+## Who Is TestForge For?
+
+TestForge is designed for **MSBTE exam officers and administrative staff** at polytechnic institutes. If your institute manages end-semester examinations under the Maharashtra State Board of Technical Education and you still rely on manual processes, TestForge is built for you.
+
+Typical users include:
+
+- **Exam Center Coordinators** managing block allocation, supervisors, and daily operations
+- **Office Staff** generating duty orders, seating statements, and question paper accounting sheets
+- **Principals and HODs** who need real-time visibility into examination progress
+
+## Problems TestForge Solves
+
+Preparing for an MSBTE examination involves dozens of interdependent tasks that today are done manually — a process that routinely takes **weeks of administrative effort** before a single exam begins.
+
+TestForge automates the entire chain:
+
+<CardGroup cols={2}>
+  <Card title="Timetable Processing" icon="calendar">
+    Upload your MSBTE timetable as HTML or Excel and let TestForge parse subjects, dates, and sessions automatically.
+  </Card>
+  <Card title="Seating & Block Allocation" icon="chair">
+    Import seating charts, validate student data, and allocate students to blocks with one click.
+  </Card>
+  <Card title="Staff Management" icon="users">
+    Assign supervisors, relievers, and control room staff with availability tracking and automated duty generation.
+  </Card>
+  <Card title="Question Paper Accounting" icon="box">
+    Track every packet from receipt to return — issue, reconcile, and account for question papers in real time.
+  </Card>
+  <Card title="MSBTE Reports (F1–F22)" icon="file-lines">
+    Generate all official MSBTE report formats including seating statements, attendance sheets, and supervisor reports.
+  </Card>
+  <Card title="Exam Day Dashboard" icon="gauge">
+    Monitor live attendance, handle copy cases, flag missing packets, and track examination progress in real time.
+  </Card>
+</CardGroup>
+
+## Tech Stack
+
+TestForge is a full-stack SaaS platform built with production-grade, battle-tested technologies.
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | Next.js 15, React 19, TypeScript 5 |
+| **Backend** | FastAPI, Python 3.11, SQLAlchemy |
+| **Database** | PostgreSQL 16, Drizzle ORM |
+| **Authentication** | Better Auth (email + Google OAuth) |
+| **Payments** | Razorpay (subscriptions, promo codes) |
+| **Email** | Resend |
+| **UI** | Tailwind CSS, shadcn/ui, Framer Motion |
+| **File Processing** | Pandas, OpenPyXL, BeautifulSoup4 |
+| **Deployment** | Docker, Docker Compose |
+
+## Examination Workflow at a Glance
+
+TestForge guides exam officers through a structured, linear workflow so nothing falls through the cracks.
+
+<Steps>
+  <Step title="Upload Timetable">
+    Import your MSBTE timetable from an HTML or Excel file. TestForge parses subjects, sessions, and exam dates automatically.
+  </Step>
+  <Step title="Import Seating Chart">
+    Upload student seating data. The platform validates enrollment numbers, maps students to subjects, and flags discrepancies.
+  </Step>
+  <Step title="Verify Students">
+    Review and approve the student list. Handle absent students, late additions, and institute-to-institute transfers.
+  </Step>
+  <Step title="Allocate Blocks">
+    Run intelligent block allocation. Students are distributed across available rooms with floor-wise organization and printable allocation sheets.
+  </Step>
+  <Step title="Assign Supervisors">
+    Assign supervisors and relievers from your staff pool. TestForge tracks availability and generates official duty orders automatically.
+  </Step>
+  <Step title="Generate Office Orders">
+    Produce all pre-examination paperwork — office orders, question paper indent forms, and control room assignments.
+  </Step>
+  <Step title="Conduct Examination">
+    Use the live Exam Day Dashboard to track attendance, manage copy cases, and monitor question paper packets in real time.
+  </Step>
+  <Step title="Generate MSBTE Reports">
+    Export official F1–F22 reports, attendance sheets, supervisor reports, and packet accounting statements ready for submission.
+  </Step>
+</Steps>
+
+## Subscription and Licensing
+
+TestForge is a **proprietary SaaS platform**. Institutes access the platform through a subscription managed via Razorpay. A **Lifetime Offline Edition** is also available for institutes that require a fully air-gapped, on-premises deployment — no internet connection required after installation.
+
+<Tip>
+  For licensing inquiries or to request a demo, contact **support@testforge.tech** or visit [testforge.tech](https://testforge.tech).
+</Tip>

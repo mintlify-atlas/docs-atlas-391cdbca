@@ -1,0 +1,140 @@
+---
+title: "Inventory Processing API — TestForge QP Packet Import"
+sidebarTitle: "Inventory"
+description: "Process and import uploaded question paper packet inventory Excel files into the qp_inventory table for your MSBTE exam center in TestForge."
+---
+
+The Inventory API processes uploaded Excel files that contain the question paper (QP) packet inventory issued for an MSBTE examination. Each row in the inventory file describes how many candidates and QP packets are expected for a specific paper code on a given exam day and session. After processing, the data is stored in the `qp_inventory` table and linked to matching timetable entries.
+
+All endpoints under this group share the prefix `/api/inventory` and require a valid exam-center authentication token.
+
+<Note>
+  The timetable must be processed before inventory. The processor cross-references each inventory row's paper code against the `timetable` table to resolve the correct exam date and session. Rows that do not match any timetable entry are skipped and counted in the `skipped` field of the response.
+</Note>
+
+---
+
+## POST /api/inventory/process
+
+Process a specific uploaded inventory file. Deletes any existing inventory records for the exam center, parses the Excel, resolves timetable references, and inserts valid records in batches.
+
+### How It Works
+
+`InventoryProcessor` runs the following pipeline:
+
+1. **Timetable cache** — All timetable entries for the exam center are loaded into a three-level lookup dictionary: exact `subject_code`, sanitized code (alphanumeric only, uppercase), and subject abbreviation. This cache is built once per processor instance.
+2. **Format detection** — The processor reads the file header row. If columns such as `Region`, `DC`, `EC`, `DAY`, `SESSION`, `PAPER_CODE` are present (sanitized format), it parses directly. Otherwise it scans the first 30 rows to find the MSBTE multi-row header and uses position-based column mapping as a fallback.
+3. **Paper code resolution** — Four strategies are tried in order: exact match → sanitized match → abbreviation match → partial substring match.
+4. **Batch insert** — Existing `qp_inventory` records are deleted, then valid items are inserted in batches of **100 rows** (`BATCH_SIZE = 100`). Items without a matched timetable entry are excluded.
+5. **Status update** — The `uploads` record is updated to `PROCESSED` with the count of inserted rows.
+
+### Request
+
+<ParamField body="stored_filename" type="string" required>
+  The server-assigned filename returned by `POST /api/upload/` for an `inventory` upload.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when processing completed without errors.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Inventory processed successfully"`.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Processing statistics.
+
+  <Expandable title="data fields">
+    <ResponseField name="total_items" type="integer">
+      Total rows parsed from the file (including skipped).
+    </ResponseField>
+    <ResponseField name="inserted" type="integer">
+      QP inventory records successfully inserted into the database.
+    </ResponseField>
+    <ResponseField name="skipped" type="integer">
+      Rows excluded because no matching timetable entry was found for the paper code.
+    </ResponseField>
+    <ResponseField name="exam_center_id" type="string">
+      UUID of the authenticated exam center.
+    </ResponseField>
+    <ResponseField name="stored_filename" type="string">
+      The filename that was processed.
+    </ResponseField>
+    <ResponseField name="processing_time_seconds" type="number">
+      Wall-clock duration of the full operation, in seconds.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="string | null">
+  Error description on failure — e.g. `"No valid inventory data found in file"`. Otherwise `null`.
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.testforge.app/api/inventory/process \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"stored_filename": "inventory_ec-0001_c3d4e5f6.xlsx"}'
+```
+
+**Sample response**
+
+```json
+{
+  "success": true,
+  "message": "Inventory processed successfully",
+  "data": {
+    "total_items": 38,
+    "inserted": 35,
+    "skipped": 3,
+    "exam_center_id": "ec-0001-uuid",
+    "stored_filename": "inventory_ec-0001_c3d4e5f6.xlsx",
+    "processing_time_seconds": 1.84
+  },
+  "error": null
+}
+```
+
+**Sample error — no timetable processed yet**
+
+```json
+{
+  "success": false,
+  "message": "Bad Request",
+  "data": null,
+  "error": "No valid inventory data found in file"
+}
+```
+
+---
+
+## QP Inventory Schema
+
+Rows inserted into `qp_inventory` contain the following fields:
+
+| Column | Type | Description |
+|---|---|---|
+| `exam_center_id` | `uuid` | Foreign key to the authenticated exam center |
+| `day` | `integer` | Exam day number from the inventory file |
+| `date` | `date` | Resolved exam date from the timetable cache |
+| `session` | `string` | Resolved session (`Morning` / `Afternoon`) from the timetable cache |
+| `subject_code` | `string` | Paper code as present in the inventory file |
+| `expected_students` | `integer` | `No_of_Candidates` from the inventory |
+| `expected_packets` | `integer` | `No_of_Packets_Required` from the inventory |
+
+---
+
+## Supported Inventory File Formats
+
+The processor handles two formats automatically:
+
+**Sanitized format** — A clean Excel with these column headers on the first row:
+
+`Region | DC | EC | DAY | SESSION | PAPER_CODE | No_of_Candidates | No_of_Packets_Required | Total_Packets_Session | Total_Packets_Day`
+
+**Raw MSBTE format** — A multi-row header Excel where the processor scans the first 30 rows to locate the header. Columns are matched by keywords (`region`, `paper code`, `candidate`, `packet required`, etc.) and fall back to positional indexes if keyword matching is inconclusive. Summary rows containing keywords like `total`, `certify`, or `signature` are automatically skipped.

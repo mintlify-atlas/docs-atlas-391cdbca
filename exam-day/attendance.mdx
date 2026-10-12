@@ -1,0 +1,129 @@
+---
+title: "Exam Day Attendance & Copy Case Management"
+sidebarTitle: "Attendance"
+description: "Mark absent seat numbers and record copy case students per subject, block, and session. Changes feed directly into F1 and F2 reports and attendance sheets."
+---
+
+Attendance in TestForge is recorded at the seat-number level during the live examination. The Attendance module is split into two sub-flows — **Mark Absent** and **Mark Copy Case** — both powered by the same underlying `ExamDayEditsPage` component, which adapts its UI and save action based on the active mode.
+
+## Two Modes, One Workflow
+
+<CardGroup cols={2}>
+  <Card title="Mark Absent" icon="user-x">
+    Records seat numbers as absent for a given timetable entry. Absent numbers are written to the `timetable.absent_numbers` JSONB column and are immediately reflected in F1 and F2 report generation.
+  </Card>
+  <Card title="Mark Copy Case (CPS)" icon="copy">
+    Records students caught in malpractice. Seat numbers are stored in `timetable.cps_students`. Resolved cases are tracked in `timetable.cps_resolved`, and the dashboard line chart plots CPS counts by date.
+  </Card>
+</CardGroup>
+
+<Note>
+  Absent and copy case statuses are **mutually exclusive per seat number**. A seat already marked as a copy case cannot be marked absent (and vice versa) until the conflicting status is cleared. The system enforces this at both the UI level (greyed-out seats with tooltip warnings) and the server action level before any write is committed.
+</Note>
+
+## Database Columns
+
+| Column | Table | Type | Purpose |
+|---|---|---|---|
+| `absent_numbers` | `timetable` | `jsonb` | Array of seat numbers marked absent |
+| `cps_students` | `timetable` | `jsonb` | Array of seat numbers with copy cases |
+| `cps_resolved` | `timetable` | `jsonb` | Subset of `cps_students` that are resolved |
+
+Each row in the `timetable` table corresponds to one subject–scheme–session–date combination for the exam center.
+
+## Marking Attendance: Step-by-Step
+
+<Steps>
+  <Step title="Choose a Mode">
+    Navigate to **Exam Day → Attendance** for absent marking, or **Exam Day → Copy Cases** for malpractice recording. Both screens show a session-selector before the seat grid.
+  </Step>
+  <Step title="Select Date and Session">
+    Pick the examination date and session slot (Morning or Afternoon) from the `SessionSelector` component. The UI fetches all unique dates from `getUniqueDates()` and all unique sessions from `getUniqueSessions()` to populate the dropdowns.
+  </Step>
+  <Step title="Load Block Allocations">
+    After confirming the session, the page calls `getAllocationsByDateSession()` to fetch every block allocation for that slot. Results are grouped into a left-hand **Block Navigator** tree:
+    - Top level: Block number and location
+    - Sub-level: Each subject–scheme combination assigned to that block, with a progress bar showing how many seats are already marked
+  </Step>
+  <Step title="Select a Subject">
+    Click any subject inside the Block Navigator. The right panel loads a **Seat Grid** — one button per seat number — populated from `seatNumbers` on the allocation record.
+
+    Seat colours:
+    - **White/neutral** — present
+    - **Rose** — absent
+    - **Amber** — copy case
+    - **Greyed / disabled** — blocked by the mutual-exclusion rule
+  </Step>
+  <Step title="Mark Seats">
+    Click individual seats to toggle them, use **Mark All** to flag every eligible seat in one action, or **Search** to jump to a specific seat number. The counter in the bottom-right shows `X of Y marked`.
+  </Step>
+  <Step title="Save the List">
+    Click **Save Absent List** (or **Save Copy Case List**). A confirmation dialog displays the total, the count being marked, and a high-absentee-rate warning if the percentage exceeds 30 %. Confirm to persist:
+
+    ```typescript
+    // Absent save
+    await markAbsent({
+      subjectCode: string,
+      scheme: string,
+      date: Date,
+      session: "Morning" | "Afternoon",
+      absentNumbers: number[],
+    });
+
+    // Copy case save
+    await markCopyCase({
+      subjectCode: string,
+      scheme: string,
+      date: Date,
+      session: "Morning" | "Afternoon",
+      cpsStudents: number[],
+    });
+    ```
+  </Step>
+  <Step title="Verify and Refresh">
+    After saving, the component immediately re-fetches timetable entries via `getTimetableEntries()` so the block navigator progress bars and the session-level stats strip update without a full page reload.
+  </Step>
+</Steps>
+
+## Session Stats Strip
+
+A four-card strip at the top of the marking view shows aggregated totals across **all blocks and subjects** for the selected session:
+
+| Stat | Description |
+|---|---|
+| Total | Sum of all students across every scheme |
+| Absent / Copy Case | Total marked in the current mode |
+| Remaining | Total minus marked |
+| Rate | Marked ÷ Total as a percentage |
+
+## Mutual Exclusion Rules
+
+```typescript
+function validateMutualExclusion(
+  mode: "absent" | "copycase",
+  seatNo: number,
+  absentSeats: number[],
+  copyCaseSeats: number[],
+): { isValid: boolean; message?: string }
+```
+
+- Attempting to mark a **copy-case seat as absent** → blocked with a toast warning.
+- Attempting to mark an **absent seat as copy case** → blocked with a toast warning.
+- Validation runs on every individual seat click and again on bulk save before the server action is called.
+
+<Warning>
+  **Report Impact** — The `absent_numbers` array feeds directly into:
+  - **F1 Report** (overall attendance summary)
+  - **F2 Report** (subject-wise absence counts)
+  - **Attendance Sheet** (block-level seat-by-seat printout)
+
+  Incorrect absent entries will propagate to all MSBTE-format reports. Always verify counts in the confirmation dialog before saving, especially if the absentee rate exceeds 30 %.
+</Warning>
+
+## Refreshing Mid-Session
+
+If an absent student arrives late and should be removed from the absent list, re-open the subject, deselect the seat number, and save again. The save action overwrites the entire `absent_numbers` array for that timetable entry with the new selection — no separate "undo" step is required.
+
+<Tip>
+  Use the **Refresh** button in the page header to re-pull the latest data from the database if two officers are working simultaneously on different blocks in the same session.
+</Tip>

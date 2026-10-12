@@ -1,72 +1,94 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "TestForge",
+  "theme": "almond",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#00a452",
+    "light": "#0cb47c"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
+  "favicon": "https://media.brand.dev/a3ba8432-850e-4618-8384-31e557c967db.png",
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:support@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/1ndrajeet/testforge"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/1ndrajeet/testforge"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "deployment"
+            ]
+          },
+          {
+            "group": "Core Workflow",
+            "pages": [
+              "workflow/overview",
+              "workflow/timetable",
+              "workflow/seating",
+              "workflow/block-allocation",
+              "workflow/staff-management"
+            ]
+          },
+          {
+            "group": "Exam Day Operations",
+            "pages": [
+              "exam-day/dashboard",
+              "exam-day/attendance",
+              "exam-day/qp-accounting"
+            ]
+          },
+          {
+            "group": "Reports",
+            "pages": [
+              "reports/msbte-reports",
+              "reports/testforge-reports",
+              "reports/office-orders"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/database",
+              "configuration/subscription"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/upload",
+              "api/timetable",
+              "api/seating",
+              "api/inventory",
+              "api/emarksheet"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

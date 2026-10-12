@@ -1,0 +1,109 @@
+{
+  "projectType": "saas",
+  "projectName": "TestForge",
+  "projectDescription": "TestForge is a full-stack MSBTE examination management platform that automates the complete end-semester examination lifecycle — from timetable upload and seating allocation to official report generation.",
+  "theme": "almond",
+  "primaryColor": "#00a452",
+  "lightColor": "#0cb47c",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "deployment"
+            ]
+          },
+          {
+            "group": "Core Workflow",
+            "pages": [
+              "workflow/overview",
+              "workflow/timetable",
+              "workflow/seating",
+              "workflow/block-allocation",
+              "workflow/staff-management"
+            ]
+          },
+          {
+            "group": "Exam Day Operations",
+            "pages": [
+              "exam-day/dashboard",
+              "exam-day/attendance",
+              "exam-day/qp-accounting"
+            ]
+          },
+          {
+            "group": "Reports",
+            "pages": [
+              "reports/msbte-reports",
+              "reports/testforge-reports",
+              "reports/office-orders"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/database",
+              "configuration/subscription"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/upload",
+              "api/timetable",
+              "api/seating",
+              "api/inventory",
+              "api/emarksheet"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "HTML & Excel timetable upload with automatic parsing",
+    "Automated student seating chart import and validation",
+    "Intelligent block allocation with supervisor assignment",
+    "Complete staff management (supervisors, relievers, control room)",
+    "Official MSBTE F1–F22 report generation",
+    "Question paper inventory tracking and packet accounting",
+    "Live exam-day dashboard with real-time attendance and copy case management",
+    "Automated office order generation via email",
+    "Multi-institute support with connected institute management",
+    "Razorpay-integrated subscription and billing system",
+    "Docker-based deployment with PostgreSQL 16",
+    "Better Auth with Google OAuth"
+  ],
+  "publicApiSurface": [
+    "POST /api/upload/",
+    "GET /api/upload/download",
+    "GET /api/upload/status",
+    "POST /api/timetable/process",
+    "POST /api/seatingchart/process",
+    "POST /api/seatingarrangement/process",
+    "POST /api/seatingarrangement/fix-mismatches",
+    "GET /api/seatingarrangement/temp-session/{temp_session_id}",
+    "POST /api/inventory/process",
+    "POST /api/emarksheet/process",
+    "GET /health"
+  ]
+}

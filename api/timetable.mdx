@@ -1,0 +1,117 @@
+---
+title: "Timetable Processing API — TestForge MSBTE Endpoints"
+sidebarTitle: "Timetable"
+description: "Parse and import uploaded MSBTE timetable HTML files into structured exam schedule entries scoped to your exam center in TestForge."
+---
+
+The Timetable API parses an uploaded MSBTE timetable HTML file and writes structured exam schedule entries to the `timetable` table. Each entry captures the exam date, session, subject code, subject name, and scheme. Entries are matched against a pre-loaded subjects cache using a `code + scheme` lookup so that the canonical subject abbreviation and ID are stored alongside the raw timetable data.
+
+All endpoints under this group share the prefix `/api/timetable` and require a valid exam-center authentication token.
+
+<Note>
+  A timetable HTML file must be uploaded first via `POST /api/upload/` with `file_type=timetable` before you call this endpoint. If no upload record exists, the processor returns a `400` error.
+</Note>
+
+---
+
+## POST /api/timetable/process
+
+Trigger processing of the most recently uploaded timetable file for the authenticated exam center. No request body is needed — the processor automatically locates the latest `timetable` upload record in the database.
+
+### How It Works
+
+`TimetableProcessor` runs the following pipeline:
+
+1. **Subject cache load** — All subjects from the `subjects` table (where `is_deleted = false`) are loaded into an in-memory dictionary keyed by `code_scheme` (both original and hyphen-normalized variants). This makes every per-entry lookup an O(1) dict access.
+2. **HTML parse** — The stored HTML file is parsed with BeautifulSoup. The parser looks for `<div>` headers containing `Date:` and `Day:` fields, then reads `<table>` elements that follow them. Each `<td>` row with a numeric SR column is extracted as a candidate entry. A secondary alternative parser handles non-standard layouts.
+3. **Entry extraction** — For each valid row: `exam_day`, `date` (reformatted to `YYYY-MM-DD`), `session` (`Morning` / `Afternoon` based on header keywords or emoji), `time_slot`, `subject_code`, `subject_name`, and `scheme` are captured. A single subject row that lists multiple schemes generates one entry per scheme.
+4. **Batch insert** — All previous timetable entries for the exam center are deleted, then new entries are inserted in batches of **250 rows** (`BATCH_SIZE = 250`). A commit is issued every **5 batches** (`COMMIT_INTERVAL = 5`). A 50 ms pause between batches prevents connection timeouts on NeonDB free tier.
+5. **Status update** — The corresponding `uploads` record is set to `PROCESSED` with the final `record_count`.
+
+### Request
+
+No request body is required. The endpoint reads the exam center identity from the bearer token.
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when parsing and insertion completed without errors.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary including the entry count, e.g. `"Timetable processed successfully (42 entries)"`.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Processing result.
+
+  <Expandable title="data fields">
+    <ResponseField name="record_count" type="integer">
+      Number of timetable entries written to the database.
+    </ResponseField>
+    <ResponseField name="exam_center_id" type="string">
+      The UUID of the authenticated exam center.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="string | null">
+  Error description when `success` is `false` — for example `"No timetable file found. Please upload first."` or `"Timetable already processed"`. Otherwise `null`.
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.testforge.app/api/timetable/process \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json"
+```
+
+**Sample response**
+
+```json
+{
+  "success": true,
+  "message": "Timetable processed successfully (42 entries)",
+  "data": {
+    "record_count": 42,
+    "exam_center_id": "ec-0001-uuid"
+  },
+  "error": null
+}
+```
+
+**Sample error — no file uploaded**
+
+```json
+{
+  "success": false,
+  "message": "Bad Request",
+  "data": null,
+  "error": "No timetable file found. Please upload first."
+}
+```
+
+---
+
+## Timetable Entry Schema
+
+Each row inserted into the `timetable` table contains the following fields:
+
+| Column | Type | Description |
+|---|---|---|
+| `exam_center_id` | `uuid` | Foreign key to the authenticated exam center |
+| `exam_day` | `integer` | Day number extracted from the `Day:` header |
+| `date` | `date` | Exam date in `YYYY-MM-DD` format |
+| `session` | `string` | `Morning` or `Afternoon` |
+| `time_slot` | `string` | Raw time string from the timetable cell |
+| `subject_code` | `string` | Subject code as printed in the timetable |
+| `subject_name` | `string` | Subject name as printed in the timetable |
+| `scheme` | `string \| null` | Scheme string, e.g. `AE-3-I`; `null` if absent |
+| `subject_id` | `uuid \| null` | Matched subject ID from the subjects cache |
+| `subject_abbr` | `string \| null` | Matched subject abbreviation from the subjects cache |
+| `total_students` | `integer` | Populated later by the seating chart processor |
+
+<Note>
+  Subject matching uses a two-pass strategy. First, an exact `code_scheme` key lookup is attempted. If that misses, a hyphen-normalized scheme variant is tried. If both miss, a prefix fallback scans all cache entries for the same subject code and uses the first match. Unmatched subjects are still inserted with `subject_id = null`.
+</Note>

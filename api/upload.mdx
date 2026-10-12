@@ -1,0 +1,251 @@
+---
+title: "File Upload API — TestForge Unified Upload Endpoints"
+sidebarTitle: "Upload"
+description: "Upload, download, and check processing status for timetable, seating chart, seating arrangement, inventory, and e-marksheet files."
+---
+
+The Upload API is the entry point for all file ingestion in TestForge. Every processing workflow — timetables, seating charts, seating arrangements, inventory, and e-marksheets — begins by uploading the raw file through this unified endpoint before triggering the relevant processor.
+
+All endpoints under this group share the prefix `/api/upload` and require a valid exam-center authentication token. Uploaded files are deduplicated per exam center and file type using a PostgreSQL `ON CONFLICT` upsert, so re-uploading replaces the previous file rather than creating duplicates.
+
+---
+
+## POST /api/upload/
+
+Upload a file to TestForge. The file is validated, sanitized, and stored; no processing occurs at this stage.
+
+**Accepted formats**
+
+| `file_type` | Format |
+|---|---|
+| `timetable` | `.html` / `.htm` |
+| `seating_chart` | `.xlsx` / `.xls` |
+| `seating_arrangement` | `.xlsx` / `.xls` |
+| `inventory` | `.xlsx` / `.xls` |
+| `emarksheet` | `.xlsx` / `.xls` |
+
+### Request
+
+This endpoint accepts `multipart/form-data`.
+
+<ParamField body="file" type="file" required>
+  The file to upload. Timetables must be HTML; all other types must be Excel (`.xlsx` or `.xls`). Maximum file size is governed by the server's `MAX_UPLOAD_SIZE` setting.
+</ParamField>
+
+<ParamField body="file_type" type="string" required>
+  The category of the file. Must be one of: `timetable`, `seatingchart`, `seatingarrangement`, `inventory`, `emarksheet`.
+</ParamField>
+
+<ParamField body="connected_institute_id" type="string">
+  UUID of the connected institute. Required when `file_type` is `seatingchart`. Must match an active record in `connected_institutes` that belongs to the authenticated exam center.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the file was stored successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable confirmation, e.g. `"File uploaded successfully"`.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Upload metadata.
+
+  <Expandable title="data fields">
+    <ResponseField name="stored_filename" type="string">
+      Server-assigned filename used in all subsequent API calls.
+    </ResponseField>
+    <ResponseField name="original_filename" type="string">
+      The original name of the uploaded file.
+    </ResponseField>
+    <ResponseField name="file_type" type="string">
+      The `file_type` value you submitted.
+    </ResponseField>
+    <ResponseField name="file_size" type="integer">
+      File size in bytes after sanitization.
+    </ResponseField>
+    <ResponseField name="file_hash" type="string">
+      SHA-256 hex digest of the file content.
+    </ResponseField>
+    <ResponseField name="uploaded_at" type="string">
+      ISO 8601 timestamp of the upload.
+    </ResponseField>
+    <ResponseField name="connected_institute_id" type="string | null">
+      The institute UUID supplied in the request, or `null`.
+    </ResponseField>
+    <ResponseField name="sanitized" type="boolean">
+      `true` if the file was sanitized before storage (always `true` for `seatingchart`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="string | null">
+  Error detail when `success` is `false`, otherwise `null`.
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.testforge.app/api/upload/ \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@/path/to/timetable.html" \
+  -F "file_type=timetable"
+```
+
+**Sample response**
+
+```json
+{
+  "success": true,
+  "message": "File uploaded successfully",
+  "data": {
+    "stored_filename": "timetable_ec-0001_a1b2c3d4.html",
+    "original_filename": "timetable.html",
+    "file_type": "timetable",
+    "file_size": 48320,
+    "file_hash": "e3b0c44298fc1c149afb...5d8f1a",
+    "uploaded_at": "2025-06-01T09:00:00.000Z",
+    "connected_institute_id": null,
+    "sanitized": false
+  },
+  "error": null
+}
+```
+
+---
+
+## GET /api/upload/download
+
+Download a previously uploaded file by its server-assigned `stored_filename`. The response is the raw file with the appropriate `Content-Disposition` header set.
+
+### Request
+
+<ParamField query="file_name" type="string" required>
+  The `stored_filename` returned by `POST /api/upload/`.
+</ParamField>
+
+<ParamField query="file_type" type="string" required>
+  The file type. Must match the type used during upload.
+</ParamField>
+
+<ParamField query="connected_institute_id" type="string">
+  UUID of the connected institute. Supply this when downloading a `seatingchart` file that was uploaded with an institute association.
+</ParamField>
+
+### Response
+
+On success, returns the raw file binary with headers:
+
+- `Content-Type`: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (`.xlsx`), `application/vnd.ms-excel` (`.xls`), or `text/html` (`.html` / `.htm`)
+- `Content-Disposition`: `attachment; filename=<original_filename>`
+
+Returns `404` if the file record is not found in the database or if the file does not exist on disk.
+
+### Example
+
+```bash
+curl -X GET \
+  "https://api.testforge.app/api/upload/download?file_name=timetable_ec-0001_a1b2c3d4.html&file_type=timetable" \
+  -H "Authorization: Bearer <token>" \
+  --output timetable_downloaded.html
+```
+
+---
+
+## GET /api/upload/status
+
+Check the upload and processing status for a given file type. Useful for polling before triggering a processor endpoint.
+
+### Request
+
+<ParamField query="file_type" type="string" required>
+  The file type to query. One of: `timetable`, `seatingchart`, `seatingarrangement`, `inventory`, `emarksheet`.
+</ParamField>
+
+<ParamField query="connected_institute_id" type="string">
+  UUID of the connected institute. Supply this when checking a `seatingchart` upload linked to a specific institute.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Always `true` for this endpoint (the absence of a file is not an error).
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Success"`.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Status information.
+
+  <Expandable title="data fields">
+    <ResponseField name="exists" type="boolean">
+      `false` when no upload record is found for this exam center and file type.
+    </ResponseField>
+    <ResponseField name="stored_filename" type="string | null">
+      Server-assigned filename of the most recent upload.
+    </ResponseField>
+    <ResponseField name="status" type="string | null">
+      Current state: `UPLOADED`, `PROCESSING`, `PROCESSED`, or `FAILED`.
+    </ResponseField>
+    <ResponseField name="original_filename" type="string | null">
+      The original filename as submitted.
+    </ResponseField>
+    <ResponseField name="record_count" type="integer | null">
+      Number of records written during processing, if already processed.
+    </ResponseField>
+    <ResponseField name="processed_at" type="string | null">
+      ISO 8601 timestamp when processing completed.
+    </ResponseField>
+    <ResponseField name="created_at" type="string | null">
+      ISO 8601 timestamp when the file was first uploaded.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="string | null">
+  Always `null` for this endpoint.
+</ResponseField>
+
+### Example
+
+```bash
+curl -X GET \
+  "https://api.testforge.app/api/upload/status?file_type=timetable" \
+  -H "Authorization: Bearer <token>"
+```
+
+**Sample response — file processed**
+
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "exists": true,
+    "stored_filename": "timetable_ec-0001_a1b2c3d4.html",
+    "status": "PROCESSED",
+    "original_filename": "timetable.html",
+    "record_count": 42,
+    "processed_at": "2025-06-01T09:05:23.000Z",
+    "created_at": "2025-06-01T09:00:00.000Z"
+  },
+  "error": null
+}
+```
+
+**Sample response — no file uploaded yet**
+
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "exists": false
+  },
+  "error": null
+}
+```

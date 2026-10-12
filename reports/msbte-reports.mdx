@@ -1,0 +1,86 @@
+---
+title: "MSBTE Reports: Generate Official F1–F22 Formats"
+sidebarTitle: "MSBTE Reports"
+description: "Generate all official MSBTE examination formats (F1–F22) from live database data. Print-ready A4 layouts with react-to-print — no manual data entry needed."
+---
+
+TestForge generates every official MSBTE examination report — from examinee instructions to question paper packet accounting — directly from live data stored in your database. No spreadsheets, no manual entry. Navigate to **Reports → MSBTE Reports**, select the format you need, choose a date or session where required, and print a perfectly formatted A4 document in seconds.
+
+## Available Formats
+
+All formats are rendered using the `msbte-report-layout` wrapper, which enforces MSBTE's standard A4 portrait layout with the official MSBTE logo, examination season/year, exam center name and code, date, session metadata, and signature fields in the footer.
+
+| Format | Name | Description |
+|--------|------|-------------|
+| **F1** | Instructions to Examinees | Two-page document listing General, Answer Book, and Special instructions for examinees. Displayed at the examination hall entrance. |
+| **F2** | QP Bundle Receipt (Controller → DC) | Receipt issued by the Officer-in-Charge on receiving question paper bundles from the Controller of Examination at the Distribution Centre. |
+| **F3** | QP Bundle Receipt (EC → Controller) | Receipt issued by the Exam Centre on receiving QP bundles from the Controller, including per-session packet counts. |
+| **F3A** | QP Receipt Acknowledgement | Supplementary acknowledgement for question paper packets at the exam centre level. |
+| **F4** | Block Allocation Statement | Block-wise student allocation summary including subject codes, seat ranges, and assigned supervisors per session. |
+| **F5** | Supervisor Attendance | Attendance register for all supervisors and relievers reporting for duty at the examination centre. |
+| **F6** | Reliever Statement | Reliever duty statement listing reliever names, assigned blocks, and session-wise duty periods. |
+| **F7** | Chief Supervisor Report | End-of-session report submitted by the Chief Supervisor covering examination conduct, incidents, and packet dispatch. |
+| **F8** | Control Room Report | Control room activity log covering QP packet receipt, issue to blocks, return, and any discrepancies. |
+| **F9** | QP Packet Statement | Question paper packet inventory statement with expected vs. received counts, per subject and session. |
+| **F10** | Absentee Statement | Per-session absentee list with seat numbers, subject codes, and reason codes for absent examinees. |
+| **F11** | Copy Case Statement | Statement of copy/unfair-means cases recorded during the examination, with examinee and invigilator details. |
+| **F12** | Answer Book Issue Register | Block-wise register of answer books issued, with start and end serial numbers per supervisor. |
+| **F13** | Answer Book Return Register | Register confirming return of answer books from each block after the session ends. |
+| **F14** | Seating Arrangement | Block-wise seating chart showing seat numbers, institute codes, and subject mappings for display at the exam centre. |
+| **F15** | Examination Progress Report | Mid-session progress report capturing attendance counts, late entries, and early departures. |
+| **F16** | Question Paper Reconciliation | Post-session reconciliation of question papers received, used, spoilt, and returned. |
+| **F17** | Institute-wise Attendance | Attendance summary grouped by connected institute showing present, absent, and copy-case counts. |
+| **F18** | Subject-wise Attendance | Attendance summary grouped by subject code across all blocks for a given session. |
+| **F19** | Packet Dispatch Statement | Statement for dispatching sealed answer book bundles to the evaluation centre after the session. |
+| **F20** | Session Completion Report | Official report confirming smooth or otherwise conduct of the examination session, signed by the Chief Officer. |
+| **F21** | Supplementary Answer Book Register | Register tracking supplementary (additional) answer books issued per block and examinee. |
+| **F22** | Final Examination Summary | Consolidated end-of-exam summary covering all sessions, total students, attendance rates, and packet status. |
+
+## How Data Is Populated
+
+Every MSBTE report fetches its data live from the database at the time of generation:
+
+- **Seating and block data** comes from the block allocation module after supervisor assignment is complete.
+- **Attendance and absent numbers** are pulled from timetable entries updated on the exam day dashboard.
+- **QP inventory** (packets received, expected, returned) is sourced from the question paper accounting module.
+- **Staff details** (supervisor names, reliever names, UIDs) come from the staff management module.
+- **Exam centre metadata** (name, code, season, year, distribution centre code) is resolved from the authenticated user's exam centre record.
+
+<Note>
+Reports that require a specific date or session — such as F2, F3, F9, and F10 — display a session selector screen before rendering the report. Only dates that have inventory or timetable data are shown in the selector.
+</Note>
+
+## Printing a Report
+
+All MSBTE reports share the same print workflow powered by the `react-to-print` library.
+
+<Steps>
+  <Step title="Open the report page">
+    Navigate to **Reports → MSBTE Reports** and select the format you want to print (e.g., Format 2).
+  </Step>
+  <Step title="Select date and session (if prompted)">
+    For date-dependent reports, choose the examination date from the available dates dropdown. Session defaults to **Morning**; change it if needed.
+  </Step>
+  <Step title="Review the on-screen preview">
+    The report renders as an A4 preview on screen, populated with live data. Verify the exam centre name, code, date, and content before printing.
+  </Step>
+  <Step title="Set the number of copies">
+    Use the **Copies per block** spinner in the control bar to choose how many copies to print (1–5). Copy 1 is labelled "Forwarded with answer book bundle"; Copy 2 is "For office record".
+  </Step>
+  <Step title="Click Print">
+    Click the **Print All** button. The browser's native print dialog opens with the page size pre-set to **A4 portrait**. Select your printer and confirm.
+  </Step>
+</Steps>
+
+<Tip>
+The `msbte-report-layout` wrapper enforces exact A4 dimensions (`210 mm × 297 mm`) with zero browser margins via the `@page { size: A4; margin: 0; }` CSS rule. For best results, ensure **Headers and Footers** is **disabled** in the browser print dialog, and **Background graphics** is **enabled** so table borders and shading print correctly.
+</Tip>
+
+## Layout Architecture
+
+The `msbte-report-layout.tsx` component exports two report primitives:
+
+- **`ReportLayout`** — wraps a single-page report with a standardised header (MSBTE logo, exam season/year, centre name/code, date, session) and an optional footer with supervisor and officer signature fields.
+- **`MultiPageReport`** — renders an array of `ReportPageData` objects as individual A4 pages, with per-page headers derived from each page's data. Used for multi-page formats such as F1 (two instruction pages) and block allocation sheets with paginated seat grids.
+
+Both components accept a `compact` prop that reduces padding and font size from `11pt` to `10pt` to fit more content on a single page without altering the A4 boundary.

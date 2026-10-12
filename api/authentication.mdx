@@ -1,0 +1,159 @@
+---
+title: "TestForge API Authentication Guide"
+sidebarTitle: "Authentication"
+description: "Learn how TestForge authenticates FastAPI requests using Better Auth session cookies, the get_exam_center_id dependency, and TESTING bypass mode."
+---
+
+Every protected endpoint in the TestForge FastAPI backend resolves the caller's exam center before executing any business logic. This resolution happens through a single FastAPI dependency — `get_exam_center_id` — that is injected automatically into every protected route handler via `Depends(get_exam_center_id)`.
+
+## How It Works
+
+Authentication follows two distinct paths depending on the value of the `TESTING` environment variable.
+
+### Production Mode (`TESTING=false`)
+
+In production the backend delegates identity resolution to **Better Auth**, which is configured and hosted by the Next.js frontend:
+
+1. The browser signs in through the Next.js app (email/password or Google OAuth).
+2. Better Auth issues a session cookie named `better-auth.session_token`.
+3. When the Next.js frontend calls the FastAPI backend, the browser forwards that cookie automatically.
+4. The `get_exam_center_id` dependency reads the cookie from the incoming request and calls the Better Auth session endpoint (`/api/auth/get-session`) on the frontend to validate it.
+5. The returned `user.id` is used to look up the caller's organisation membership in the database, which resolves the associated `exam_center.id`.
+6. That `exam_center_id` string is passed down to the route handler.
+
+```python
+async def get_exam_center_id(request: Request) -> str:
+    """Get exam center ID from BetterAuth session"""
+
+    if settings.TESTING:
+        return settings.TEST_EXAM_CENTER_ID
+
+    token = request.cookies.get("better-auth.session_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing session")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{settings.APP_URL}/api/auth/get-session",
+            cookies={"better-auth.session_token": token},
+            timeout=5.0,
+        )
+
+    user_id = resp.json().get("user", {}).get("id")
+
+    result = db.execute_query(
+        """
+        SELECT ec.id FROM exam_centers ec
+        JOIN org_members om ON om.org_id = ec.org_id
+        WHERE om.user_id = :user_id
+        """,
+        {"user_id": user_id},
+    )
+
+    return result[0]["id"]
+```
+
+### Testing Mode (`TESTING=true`)
+
+When `TESTING=true`, the dependency short-circuits immediately and returns the value of `TEST_EXAM_CENTER_ID` from the environment — no cookie or database look-up is performed. This is useful for local development and automated tests.
+
+```bash
+# backend/.env (development only)
+TESTING=true
+TEST_EXAM_CENTER_ID=a3e5c386-efbb-373e-36d0-1bc812bde9d2
+```
+
+<Warning>
+  **Never enable `TESTING=true` in production.** Doing so completely removes all authentication — any caller can impersonate any exam center by hitting your endpoints without a valid session. Always set `TESTING=false` (or omit the variable entirely) before deploying to a public server.
+</Warning>
+
+## Using the Dependency in Route Handlers
+
+Every protected endpoint declares `exam_center_id: str = Depends(get_exam_center_id)` in its parameter list. FastAPI resolves the dependency before the handler runs, so the route never needs to touch cookies or the database directly.
+
+```python
+from fastapi import APIRouter, Depends
+from auth import get_exam_center_id
+
+router = APIRouter(prefix="/inventory", tags=["inventory"])
+
+@router.get("/")
+async def list_inventory(
+    exam_center_id: str = Depends(get_exam_center_id),
+):
+    # exam_center_id is already resolved and validated here
+    records = db.execute_query(
+        "SELECT * FROM inventory WHERE exam_center_id = :ec_id",
+        {"ec_id": exam_center_id},
+    )
+    return {"success": True, "message": "OK", "data": records, "error": None}
+```
+
+No additional token parsing, header reading, or session management is needed inside individual route handlers.
+
+## Error Responses
+
+If authentication fails, `get_exam_center_id` raises a standard `HTTPException`. The client receives a JSON error body that conforms to the [APIResponse](/api/overview#standard-response-format) format.
+
+| Scenario | HTTP Status | `detail` |
+|----------|-------------|----------|
+| Cookie absent | `401` | `Missing session` |
+| Session invalid / expired | `401` | `Invalid session` |
+| User not in session payload | `401` | `User not found` |
+| No exam center for user | `404` | `Exam center not found` |
+| Better Auth unreachable | `504` | `Auth service timeout` |
+| Unexpected error | `401` | `Authentication failed` |
+
+## Better Auth Configuration (Frontend)
+
+Better Auth lives entirely in the Next.js frontend. The backend only consumes the session cookie that Better Auth issues. Configure Better Auth using these environment variables in your frontend `.env`:
+
+| Variable | Description |
+|----------|-------------|
+| `BETTER_AUTH_SECRET` | Secret key used by Better Auth to sign session tokens — must be a long, random string |
+| `BETTER_AUTH_URL` | The canonical URL of your Next.js app (e.g. `https://testforge.example.com`) |
+| `GOOGLE_CLIENT_ID` | OAuth 2.0 client ID from the Google Cloud Console, required for Google sign-in |
+| `GOOGLE_CLIENT_SECRET` | OAuth 2.0 client secret from the Google Cloud Console, required for Google sign-in |
+
+The backend's `NEXT_PUBLIC_APP_URL` variable must point to the same host so that `get_exam_center_id` can reach the `/api/auth/get-session` endpoint.
+
+## Cookie Forwarding (Next.js → FastAPI)
+
+When the Next.js frontend makes a server-side request to the FastAPI backend it must forward the `better-auth.session_token` cookie. The simplest pattern is to read `cookies()` from Next.js and attach the value to the outgoing `fetch` call:
+
+```python
+# This is handled automatically when the browser calls the API directly.
+# For server-side Next.js API routes that proxy to FastAPI, forward the cookie:
+
+# pages/api/some-action.ts (Next.js)
+# const cookie = req.headers.cookie;
+# fetch("http://localhost:8000/api/inventory", {
+#   headers: { Cookie: cookie },
+#   credentials: "include",
+# });
+```
+
+<Note>
+  The interactive Swagger UI (`/docs`) is only available when `DEBUG=true`. When testing protected endpoints through Swagger UI in development, set `TESTING=true` so auth is bypassed — the UI has no built-in mechanism to supply the Better Auth session cookie.
+</Note>
+
+## Authentication Flow Diagram
+
+```
+Browser / Next.js Client
+        │
+        │  1. POST /api/auth/sign-in  (Better Auth on Next.js)
+        ▼
+   Next.js App  ──────────────────────────────────────────────
+        │  2. Issues `better-auth.session_token` cookie
+        │
+        │  3. Subsequent API call (cookie forwarded automatically)
+        ▼
+   FastAPI Backend  (/api/upload, /api/inventory, …)
+        │
+        │  4. get_exam_center_id reads cookie
+        │  5. Calls GET {APP_URL}/api/auth/get-session
+        │  6. Resolves user_id → org_member → exam_center_id
+        ▼
+   Route Handler receives exam_center_id
+```

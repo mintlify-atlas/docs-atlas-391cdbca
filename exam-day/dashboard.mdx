@@ -1,0 +1,134 @@
+---
+title: "Exam Day Dashboard – Live Operations Overview"
+sidebarTitle: "Dashboard"
+description: "Monitor real-time exam center statistics, attendance rates, copy cases, block utilization, and subject-wise enrollment from a single live dashboard."
+---
+
+The Exam Day Dashboard is the central command screen for an exam officer during an active examination. It aggregates live data from every module — attendance, copy cases, block allocations, staff duty, and QP inventory — and presents everything through interactive charts and summary cards, refreshed on demand.
+
+## What the Dashboard Shows
+
+The dashboard renders six top-level metric cards alongside three Chart.js visualisations (Bar, Doughnut, and Line) that update every time the officer clicks **Refresh**. All data is fetched in a single call to the `getExamOfficerDashboard` server action and scoped to the authenticated exam center.
+
+<CardGroup cols={2}>
+  <Card title="Total Students & Examinees" icon="users">
+    Displays the unique student count alongside the total enrolment across all timetable entries, giving an instant headcount for the examination cycle.
+  </Card>
+  <Card title="Staff on Duty" icon="user-check">
+    Shows the combined supervisor and reliever count. Breaks down further into total supervisors assigned versus total relievers available today.
+  </Card>
+  <Card title="Blocks in Use" icon="building">
+    Lists the number of active examination blocks. Each block's utilisation percentage is colour-coded — green above 80 %, amber for 50–80 %, and red below 50 %.
+  </Card>
+  <Card title="Subjects Scheduled" icon="book-open">
+    Reports the count of unique subject codes across all timetable sessions, giving a quick sense of paper variety for the current examination.
+  </Card>
+  <Card title="Exam Days Remaining" icon="calendar">
+    Calculated from the timetable date range (start date to end date), so officers always know how far along the examination cycle they are.
+  </Card>
+  <Card title="QP Inventory Completion" icon="file-text">
+    Percentage of question paper packets received versus expected (`totalReceived / totalExpected × 100`). Turns amber when completion drops below 80 %.
+  </Card>
+</CardGroup>
+
+## Exam Center Profile Strip
+
+Directly below the metric cards, a profile strip surfaces key exam center details pulled from the `examCenters` table:
+
+- **Officer Incharge** and **Sealing Supervisor** names
+- **Distribution Center** code and name
+- **Examination Duration** — formatted start date to end date
+
+This strip is read-only and serves as a persistent reference during the day.
+
+## Charts
+
+| Chart | Type | What It Shows |
+|---|---|---|
+| Department Distribution | Doughnut | Student spread across departments/schemes |
+| Session Distribution | Bar | Morning vs. Afternoon student counts per date |
+| Malpractice Cases Trend | Line | Copy case (CPS) counts plotted by date |
+
+All three charts adapt to the active colour theme (light / dark) automatically.
+
+<Note>
+  The **Daily Schedule** card displays up to ten upcoming sessions in chronological order, each showing the date, session slot, student count, and number of subjects. It is scrollable within its fixed-height container.
+</Note>
+
+## Subject Enrollment Extremes
+
+Two side-by-side tables highlight:
+
+- **Highest Enrollment** — the five subjects with the most registered students, helping officers anticipate congestion points.
+- **Lowest Enrollment** — the five subjects with the fewest students, useful for spotting potential no-show scenarios before they become a report issue.
+
+## Real-Time Status Bar
+
+The dashboard computes a `realtimeStatus` object that includes:
+
+```typescript
+realtimeStatus: {
+  currentSession: string;   // "Morning" or "Afternoon" based on server clock
+  currentDate: string;      // Formatted DD MMM YYYY
+  examsInProgress: number;  // Timetable entries for today
+  examsCompleted: number;   // Total entries minus today's
+  attendanceRate: number;   // (totalExaminees - totalAbsent) / totalExaminees × 100
+}
+```
+
+## Refreshing Data
+
+<Steps>
+  <Step title="Click Refresh">
+    Press the **Refresh** button in the toolbar. The dashboard re-calls `getExamOfficerDashboard()` and updates all cards and charts simultaneously.
+  </Step>
+  <Step title="Check the Timestamp">
+    The header shows **Updated: HH:mm** — the server timestamp of the last successful data fetch — so you always know how stale the numbers are.
+  </Step>
+  <Step title="Export a Snapshot">
+    Click **Export** to download a CSV snapshot of the current dashboard state. The file is named with the current center code for easy filing.
+  </Step>
+</Steps>
+
+<Tip>
+  Refresh the dashboard at the start of each session (Morning / Afternoon) and again 30 minutes into the exam to catch any late attendance updates or newly recorded copy cases.
+</Tip>
+
+## Quick Links
+
+The dashboard provides one-click navigation to the most-used exam day modules:
+
+<CardGroup cols={2}>
+  <Card title="Attendance" icon="clipboard-list" href="/exam-day/attendance">
+    Mark absent seat numbers and record copy cases for the current session.
+  </Card>
+  <Card title="QP Accounting" icon="calculator" href="/exam-day/qp-accounting">
+    Record received packets, enter QP-per-packet counts, and flag discrepancies.
+  </Card>
+  <Card title="Block Allocation" icon="grid-3x3" href="/workflow/block-allocation">
+    View or adjust which blocks are assigned to each subject–scheme combination.
+  </Card>
+  <Card title="MSBTE Reports" icon="file-text" href="/reports/msbte-reports">
+    Generate F1–F22 attendance sheets and supervisor reports directly from live data.
+  </Card>
+</CardGroup>
+
+## Data Source
+
+All dashboard data is retrieved from the `getExamOfficerDashboard` server action, which runs five parallel database query batches against PostgreSQL and returns the `ExamOfficerDashboardData` interface:
+
+```typescript
+interface ExamOfficerDashboardData {
+  examCenter: { id; code; name; season; year; officerIncharge; sealingSupervisor; ... };
+  metrics: { totalStudents; totalExaminees; totalStaff; totalBlocks; totalSubjects; ... };
+  departmentDistribution: Array<{ department; staffCount; percentage }>;
+  sessionDistribution: Array<{ date; morning; afternoon; total }>;
+  subjectEnrollment: { highest: [...]; lowest: [...] };
+  blockUtilization: Array<{ blockNo; location; strength; totalAllocated; utilization }>;
+  staffDuty: { totalSupervisors; totalRelievers; onDutyToday; available };
+  qpInventoryStatus: { totalExpected; totalReceived; pending; completion };
+  malpracticeCases: { total; pending; resolved; byDate: [...] };
+  realtimeStatus: { currentSession; currentDate; examsInProgress; attendanceRate };
+  lastUpdated: Date;
+}
+```

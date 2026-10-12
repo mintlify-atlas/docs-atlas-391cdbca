@@ -1,0 +1,144 @@
+---
+title: "Office Orders: Generate and Email Duty Orders"
+sidebarTitle: "Office Orders"
+description: "Generate official duty orders for supervisors, relievers, and chief officers, then email them via Resend with built-in per-exam-centre usage tracking."
+---
+
+Office Orders are formal duty appointment letters issued by the examination centre to staff members before the examination begins. TestForge generates these orders automatically from the supervisor and reliever assignments already stored in the database, formats them as professional A4 letterhead documents, and can send them directly to recipients' email addresses via the Resend email API — all without leaving the platform.
+
+## Order Types
+
+There are three distinct office order types, each rendered by the same underlying `supervision-order.tsx` component with a `type` prop:
+
+<CardGroup cols={2}>
+  <Card title="Supervision Order" icon="user-check">
+    Duty order addressed to each **block supervisor**, listing their assigned examination dates and sessions in a table. References the `supervision` order type and fetches data from the `orders` table filtered by `order_type = 'supervision'`.
+  </Card>
+  <Card title="Reliever Order" icon="users">
+    Duty order addressed to each **reliever**, listing their scheduled relief dates and sessions. Uses the same layout as the Supervision Order but references `order_type = 'reliever'`.
+  </Card>
+  <Card title="Chief & Control Room Order" icon="shield-halved">
+    Appointment letter for the **Chief Supervisor**, **Officer-in-Charge**, **Sealing Supervisor**, and **Exam Controller**. No duty schedule table is included — these officers are appointed for the full examination period. Officers are entered manually via the input form since they are not stored in the `orders` table.
+  </Card>
+  <Card title="Office Order Mail" icon="envelope">
+    The email automation hub (`office-order-mail.tsx`). Fetches all three order types, lets you select recipients, preview the HTML email, and send orders in bulk via the `/api/send-email` route backed by Resend.
+  </Card>
+</CardGroup>
+
+---
+
+## Letterhead Customisation
+
+Every order is printed on an institutional letterhead that you configure once and is saved to `localStorage` under the key `order_letterhead`. The letterhead includes:
+
+- **College name** and **logo** (URL-based, validated live)
+- Address, city, state, and pincode
+- Telephone, mobile, and email
+- Website URL
+- Reference number and date (auto-set to today)
+
+Click **Customize Letterhead** on any order generation page to expand the editor. Changes are saved automatically to `localStorage` and persist across sessions and order types.
+
+---
+
+## Generating and Printing Orders
+
+<Steps>
+  <Step title="Navigate to the order type">
+    Go to **Reports → Office Orders** and choose **Supervision Order**, **Reliever Order**, or **Chief & Control Room Order**.
+  </Step>
+  <Step title="Enter reference keys">
+    Fill in the **Order Ref Key** (your internal order reference, e.g., `TF/2025/SUP/01`) and the **College Ref Key** (your institution's file reference number). Both keys appear on every order in the Subject and Reference lines.
+  </Step>
+  <Step title="Add officers (Chief Order only)">
+    For the Chief & Control Room Order, use the officer input form to add each officer's name, department, email, role (Lecturer / HOD / Lab Assistant), and post (Chief Officer In-Charge / Officer In-Charge / Sealing Supervisor / Exam Controller). Click **Add Officer** after each entry.
+  </Step>
+  <Step title="Generate the report">
+    Click **Generate Report**. TestForge fetches supervisor or reliever orders from the database, maps them to staff records, and renders one A4 order per person. Long duty schedules (more than 5 sessions) are paginated automatically across multiple pages.
+  </Step>
+  <Step title="Print all orders">
+    Click **Print (N pages)** in the page header. The browser print dialog opens with `@page { size: A4 portrait; margin: 0; }` pre-applied. Each order breaks onto a new page automatically.
+  </Step>
+</Steps>
+
+<Note>
+Supervision and Reliever orders are generated from the `orders` table. This table is populated when you run the **Generate Orders** action in the Block Allocation module after supervisors and relievers have been assigned. If the table is empty, the Generate Report button will show a "No orders found" toast and not render a report.
+</Note>
+
+---
+
+## Email Automation
+
+The **Office Order Mail** page (`office-order-mail.tsx`) consolidates all three order types into a single send flow.
+
+### Generate and Send Workflow
+
+<Steps>
+  <Step title="Open Office Order Mail">
+    Navigate to **Reports → Office Orders → Office Order Mail**.
+  </Step>
+  <Step title="Enter reference keys">
+    Enter the **Order Ref Key** and **College Ref Key**, then click **Fetch All** to load supervisors and relievers from the database simultaneously. Add chief officers manually on the Officers tab.
+  </Step>
+  <Step title="Review and select recipients">
+    Each tab (Supervisors, Relievers, Officers) shows a scrollable list of recipients with checkboxes. Toggle individuals on or off. Use **Select All** or **Deselect All** for bulk changes. The quota badge updates in real time.
+  </Step>
+  <Step title="Configure exclusions">
+    In the exclusion bar above the recipient list, type an email address or domain (e.g., `@example.com`) and click **Add Exclude**. Excluded addresses are crossed out and cannot be selected. Exclusions are saved to `localStorage` and persist across sessions.
+  </Step>
+  <Step title="Preview emails">
+    Click **Preview** to open a dialog showing the rendered HTML email for each selected recipient. Verify the letterhead, body text, and duty schedule table before sending.
+  </Step>
+  <Step title="Send all">
+    Click **Send All (N)**. TestForge sends each email individually via `POST /api/send-email` with a fully rendered HTML payload. A success toast shows how many emails were sent. If any fail, a warning toast indicates the count.
+  </Step>
+</Steps>
+
+### Email Log Schema
+
+Every sent email is recorded in the `email_logs` table for auditing and quota tracking:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `org_id` | `uuid` | Organisation that sent the email |
+| `exam_center_id` | `uuid` | Exam centre the order was sent from |
+| `user_id` | `uuid` | User who triggered the send |
+| `recipient_email` | `text` | Recipient's email address |
+| `recipient_name` | `text` | Recipient's display name |
+| `subject` | `text` | Email subject line |
+| `order_type` | `text` | `supervision`, `reliever`, or `chief` |
+| `sent_at` | `timestamptz` | Timestamp of the send attempt |
+
+The **Email Usage Stats** widget at the top of the Office Order Mail page reads from this table and displays how many emails have been sent from the current exam centre.
+
+<Note>
+The send quota is capped at **80 emails per batch**. If the number of selected recipients exceeds 80, the Send button is blocked and an error toast is shown. Split large sends across multiple batches by deselecting some recipients, sending, then selecting the rest.
+</Note>
+
+---
+
+## Email Environment Variables
+
+Three environment variables must be set in the frontend `.env.local` file for email sending to work:
+
+```env
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EMAIL_FROM=noreply@yourdomain.com
+REPLY_TO=principal@yourinstitute.edu
+```
+
+| Variable | Description |
+|----------|-------------|
+| `RESEND_API_KEY` | Your Resend API key, obtained from [resend.com](https://resend.com). The sending domain must be verified in Resend. |
+| `EMAIL_FROM` | The "from" address displayed to recipients. Must match a verified domain in your Resend account. |
+| `REPLY_TO` | Optional reply-to address. Set this to the exam centre's official email so recipients can reply with queries. |
+
+<Warning>
+If `RESEND_API_KEY` is missing or invalid, the `/api/send-email` route will return a 500 error and emails will not be sent. The print workflow is unaffected — orders can always be printed without email configured.
+</Warning>
+
+---
+
+## Print Without Email
+
+All three order types can be printed directly without configuring email. Open the order page, generate the report, and click **Print**. The `react-to-print` library renders each order as a print-ready A4 page, including the letterhead, order body, duty schedule table, and signature block. No internet connection or email credentials are required for printing.

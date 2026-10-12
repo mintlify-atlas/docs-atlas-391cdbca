@@ -1,0 +1,165 @@
+---
+title: "Staff Management — Supervisors, Relievers & Control Room"
+sidebarTitle: "Staff"
+description: "Add and manage supervisors, relievers, and control room staff. Learn staff types, department-based assignment rules, duty orders, and bulk CSV import."
+---
+
+TestForge maintains a staff roster for every exam center. Staff members are assigned to examination roles before block allocation begins, and their records drive supervisor assignment, reliever dispatch on exam day, and duty order generation.
+
+Staff data is persistent across examination cycles. Add or import staff once, then reuse the same records for Summer and Winter examinations.
+
+## Staff Types
+
+TestForge recognises three staff types, each with distinct responsibilities and role options:
+
+<CardGroup cols={2}>
+  <Card title="Supervisor" icon="user-check">
+    Invigilates an assigned examination block for a specific date and session. Supervisors are selected during block allocation and must be from a **different department** than the scheme they supervise. Roles: `LECTURER`, `LAB_ASSISTANT`, `HEAD_OF_DEPT`.
+  </Card>
+  <Card title="Reliever" icon="user-shield">
+    Acts as a backup when an assigned supervisor is unavailable or absent on exam day. Relievers are drawn from the same staff pool structure as supervisors. Roles: `LECTURER`, `LAB_ASSISTANT`, `HEAD_OF_DEPT`.
+  </Card>
+  <Card title="Control Room Staff" icon="radio">
+    Manages the examination control room — question paper inventory, packet issue and return, and official records. Roles: `CONTROLLER`, `DEPUTY_CONTROLLER`, `ASSISTANT`.
+  </Card>
+</CardGroup>
+
+### Internal vs. External Staff
+
+All staff types can be designated as **internal** (from your own institute) or **external** (from an affiliated institute). This distinction is tracked in the `staff_type` field on the staff record and is relevant for generating official duty orders that distinguish between home and visiting staff.
+
+## Staff Data Model
+
+Each staff record in the `staff` table contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `uid` | string | Unique staff identifier (e.g., `STAFF001`), uppercase |
+| `name` | string | Full display name |
+| `department` | string | Course/department code (e.g., `CO`, `IF`, `ME`) |
+| `role` | string | Role within staff type (e.g., `LECTURER`) |
+| `email` | string | Optional email address for duty order delivery |
+| `staff_type` | enum | `SUPERVISOR`, `RELIEVER`, or `CONTROL_ROOM` |
+| `exam_center_id` | string | Scopes the record to the exam center |
+
+UIDs are stored in uppercase and must be unique within each staff type at the exam center level.
+
+## Adding Staff
+
+### Add Individually
+
+<Steps>
+  <Step title="Open the staff page">
+    Navigate to **Exam Setup → Supervisors**, **Relievers**, or **Control Room** depending on the staff type you want to manage. Each page uses the same `StaffPage` component configured for its type.
+  </Step>
+
+  <Step title="Click Add">
+    Click the **Add Supervisor** (or equivalent) button in the toolbar. The staff creation dialog opens.
+  </Step>
+
+  <Step title="Fill the form">
+    Provide the following fields:
+
+    - **UID** (required) — A unique identifier for this staff member. Converted to uppercase automatically.
+    - **Name** (required) — Full name as it should appear on duty orders.
+    - **Department** (required) — Select from the course code list. This determines which schemes the staff member is **ineligible** to supervise.
+    - **Role** (required) — Select from the role options available for this staff type.
+    - **Email** (optional) — Used to deliver printed or emailed duty orders.
+  </Step>
+
+  <Step title="Save">
+    Click **Add Supervisor**. The record is created and the staff table refreshes automatically. Staff stats update to reflect the new total.
+  </Step>
+</Steps>
+
+### Bulk Import via CSV
+
+For large staff rosters, use the CSV import feature to add many records at once.
+
+**Required CSV headers:**
+
+```csv
+UID,Name,Department,Role,Email,StaffType
+STAFF001,Prof. A. Sharma,CO,LECTURER,sharma@college.edu,SUPERVISOR
+STAFF002,Prof. B. Patil,IF,LAB_ASSISTANT,,SUPERVISOR
+```
+
+<Steps>
+  <Step title="Download the template">
+    Click **Export** on the staff page to download the current roster as a CSV. Use this as a template to understand the exact column format and header names.
+  </Step>
+
+  <Step title="Prepare your file">
+    Populate the CSV with your staff data. All rows must have at minimum: `UID`, `Name`, and `Department`. `Role` and `Email` are recommended but optional.
+  </Step>
+
+  <Step title="Import">
+    Click **Import** in the toolbar, select your CSV file, and review the preview (up to 10 rows shown). Click **Import N Records** to submit.
+
+    The bulk import skips duplicate UIDs rather than overwriting existing records. A success toast reports the number imported and the number skipped.
+  </Step>
+</Steps>
+
+<Note>
+  Duplicate UIDs within the same CSV file are rejected before any records are inserted. The import will fail with an error listing the conflicting UIDs. Resolve duplicates in your spreadsheet before re-uploading.
+</Note>
+
+## Staff Stats Dashboard
+
+The top of each staff management page shows four stat cards:
+
+| Card | Description |
+|------|-------------|
+| **Total Staff** | All staff members across all types at this exam center |
+| **Supervisors** | Count of `SUPERVISOR` type records |
+| **Relievers** | Count of `RELIEVER` type records |
+| **Control Room** | Count of `CONTROL_ROOM` type records |
+
+## Supervisors and Block Allocation
+
+Supervisors are directly consumed by the Block Allocation workflow. During allocation:
+
+- The supervisor dropdown is filtered to exclude staff from the same department as the selected scheme
+- A supervisor already assigned to another block in the current session draft is also excluded
+- If a block already has a supervisor assigned in the draft, the supervisor field is locked for that block — remove all allocations for the block to reassign
+
+Supervisors are stored on each `block_allocations` row by both `supervisor_uid` and `supervisor_name` for easy display in allocation sheets without joining back to the staff table.
+
+## Relievers
+
+Relievers are maintained in the same staff interface as supervisors, using the `RELIEVER` staff type. On exam day, a reliever can be dispatched to cover a block when its assigned supervisor is absent or reports late.
+
+<Tip>
+  Maintain a reliever pool of at least 10–15% of your total supervisor count to ensure adequate exam-day coverage. Relievers should be from departments that can cover multiple schemes to maximise flexibility.
+</Tip>
+
+## Control Room Staff
+
+Control room staff manage question paper packet logistics. They do not appear in the block allocation workflow but are assigned to control room duties for tracking:
+
+- Packet inventory receipt
+- Packet issue to supervisors before each session
+- Packet return accounting at session end
+- Reconciliation reports
+
+## Duty Orders
+
+TestForge generates printed duty orders for all staff types:
+
+- **Supervision Orders** — Date and session-scoped; include block assignment, subject, scheme, and reporting time
+- **Reliever Orders** — List the reliever's reporting duty without a fixed block assignment
+- **Control Room Orders** — Specify control room shift, duties, and reporting time
+
+Orders are generated from the **Office Orders** section. The Block Allocation page's supervision orders filter can be toggled on to restrict supervisor selection to only those staff members who already have a printed order for the active date — enforcing consistency between planning and execution.
+
+## Searching and Exporting Staff
+
+Use the search bar on any staff page to filter by name, UID, department, or email. Search is debounced at 300 ms, so results update as you type without triggering a request on every keystroke.
+
+Click **Export** to download the current (filtered or unfiltered) list as a CSV file, timestamped with today's date:
+
+```text
+supervisor-staff-2025-03-12.csv
+```
+
+This CSV can be re-imported on another exam center to replicate a staff roster without re-entering each member manually.

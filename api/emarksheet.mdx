@@ -1,0 +1,141 @@
+---
+title: "E-Marksheet Processing API — TestForge MSBTE Marksheets"
+sidebarTitle: "E-Marksheet"
+description: "Process uploaded MSBTE e-marksheet Excel files and import sheet records into TestForge, indexed by paper code for fast exam-day lookups."
+---
+
+The E-Marksheet API processes uploaded Excel files that contain the list of e-marksheets issued for an MSBTE examination. Each row in the file represents one marksheet bundle, identified by a sheet number and associated with a subject name, scheme, subject head, paper code, and file name. Imported records are stored in the `e_marksheets` table and indexed by `paper_code` for fast lookup during exam day operations.
+
+All endpoints under this group share the prefix `/api/emarksheet` and require a valid exam-center authentication token.
+
+<Note>
+  The `e_marksheets` table maintains an index on `paper_code`. This means lookups by paper code during exam day — for example, locating the correct marksheet bundle for a given subject — execute as index scans rather than full table scans, even when the exam center has hundreds of entries.
+</Note>
+
+---
+
+## POST /api/emarksheet/process
+
+Process a specific uploaded e-marksheet file. Deletes existing e-marksheet records for the exam center, parses the Excel, and inserts valid records in batches.
+
+### How It Works
+
+`EMarksheetProcessor` runs the following pipeline:
+
+1. **Format detection** — The file is read with headers. If the columns `Sheet No.`, `Subject Name`, `Scheme`, `Subject Head`, `Paper Code`, and `File Name` are present (sanitized format), rows are extracted directly. Otherwise the processor scans the first 20 rows to find the header, maps columns by keyword, and extracts data from subsequent rows.
+2. **Row filtering** — Empty rows and rows whose `Sheet No.` contains keywords like `total`, `certify`, or `signature` are skipped.
+3. **Batch insert** — Existing records for the exam center are deleted from `e_marksheets`, then new rows are inserted in batches of **250 rows** (`BATCH_SIZE = 250`) with a 50 ms pause between batches.
+4. **Status update** — The `uploads` record is set to `PROCESSED` with the total row count.
+
+### Request
+
+<ParamField body="stored_filename" type="string" required>
+  The server-assigned filename returned by `POST /api/upload/` for an `emarksheet` upload.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when processing completed without errors.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"E-Marksheet processed successfully"`.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Processing statistics.
+
+  <Expandable title="data fields">
+    <ResponseField name="total_items" type="integer">
+      Total rows parsed and inserted from the file.
+    </ResponseField>
+    <ResponseField name="inserted" type="integer">
+      Number of records successfully written to `e_marksheets`.
+    </ResponseField>
+    <ResponseField name="exam_center_id" type="string">
+      UUID of the authenticated exam center.
+    </ResponseField>
+    <ResponseField name="stored_filename" type="string">
+      The filename that was processed.
+    </ResponseField>
+    <ResponseField name="processing_time_seconds" type="number">
+      Wall-clock duration of the full operation, in seconds.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="string | null">
+  Error description on failure — e.g. `"No valid E-Marksheet data found in file"`. Otherwise `null`.
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.testforge.app/api/emarksheet/process \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"stored_filename": "emarksheet_ec-0001_d4e5f6a7.xlsx"}'
+```
+
+**Sample response**
+
+```json
+{
+  "success": true,
+  "message": "E-Marksheet processed successfully",
+  "data": {
+    "total_items": 56,
+    "inserted": 56,
+    "exam_center_id": "ec-0001-uuid",
+    "stored_filename": "emarksheet_ec-0001_d4e5f6a7.xlsx",
+    "processing_time_seconds": 2.13
+  },
+  "error": null
+}
+```
+
+**Sample error — no data found**
+
+```json
+{
+  "success": false,
+  "message": "Bad Request",
+  "data": null,
+  "error": "No valid E-Marksheet data found in file"
+}
+```
+
+---
+
+## E-Marksheet Table Schema
+
+Each row inserted into `e_marksheets` contains the following fields:
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `uuid` | Auto-generated primary key |
+| `exam_center_id` | `uuid` | Foreign key to the authenticated exam center |
+| `sheet_no` | `string` | Sheet number from the `Sheet No.` column |
+| `subject_name` | `string` | Subject name from the `Subject Name` column |
+| `scheme` | `string` | Scheme string from the `Scheme` column, e.g. `AE-3-I` |
+| `subject_head` | `string` | Subject head identifier from the `Subject Head` column |
+| `paper_code` | `string` | Paper code — **indexed** for fast lookups |
+| `file_name` | `string` | Associated file name from the `File Name` column |
+| `processed_at` | `timestamp` | Server timestamp when the record was inserted |
+
+---
+
+## Supported E-Marksheet File Formats
+
+The processor handles two formats automatically:
+
+**Sanitized format** — A clean Excel with these column headers on row 1:
+
+`Sheet No. | Subject Name | Scheme | Subject Head | Paper Code | File Name`
+
+**Raw MSBTE format** — A multi-row header Excel where the first 20 rows are scanned to find a header containing at least four of the six expected column keywords. Columns are then mapped by case-insensitive keyword matching (`sheet`, `subject name`, `scheme`, `subject head`, `paper code`, `file name`). Rows after the detected header row are extracted as data.
+
+<Note>
+  Because `paper_code` is indexed, downstream features such as exam-day packet verification and marksheet lookups resolve in O(log n) time regardless of the total number of e-marksheet records for the exam center.
+</Note>

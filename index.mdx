@@ -1,20 +1,82 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "TestForge: MSBTE Examination Management Platform"
+sidebarTitle: "Home"
+description: "TestForge automates the complete end-semester examination lifecycle for MSBTE-affiliated institutes — from timetable upload to official F1–F22 report generation."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+TestForge is a full-stack examination management platform built for MSBTE-affiliated institutes. Instead of juggling dozens of spreadsheets, you upload your timetable once and TestForge handles seating configuration, block allocation, supervisor assignment, question paper accounting, and every official MSBTE report — reducing exam preparation from weeks to hours.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get TestForge running locally in minutes with Docker or manual setup.
+  </Card>
+  <Card title="Deployment" icon="server" href="/deployment">
+    Deploy TestForge with Docker Compose for production use.
+  </Card>
+  <Card title="Core Workflow" icon="diagram-project" href="/workflow/overview">
+    Understand the end-to-end examination workflow from timetable to reports.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the FastAPI backend endpoints for integration and automation.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## What TestForge Does
+
+TestForge covers every stage of the MSBTE examination cycle:
+
+<CardGroup cols={2}>
+  <Card title="Examination Setup" icon="calendar-days" href="/workflow/timetable">
+    Upload HTML or Excel timetables, import seating charts, and manage connected institutes.
+  </Card>
+  <Card title="Block Allocation" icon="table-cells" href="/workflow/block-allocation">
+    Automatically allocate students to blocks and assign supervisors floor by floor.
+  </Card>
+  <Card title="Exam Day Dashboard" icon="gauge-high" href="/exam-day/dashboard">
+    Track live attendance, manage copy cases, and monitor examination progress in real time.
+  </Card>
+  <Card title="MSBTE Reports" icon="file-lines" href="/reports/msbte-reports">
+    Generate all official F1–F22 formats, attendance sheets, and packet accounting records.
+  </Card>
+  <Card title="QP Inventory" icon="boxes-stacked" href="/exam-day/qp-accounting">
+    Track question paper packets from issue through return with full reconciliation.
+  </Card>
+  <Card title="Office Orders" icon="envelope" href="/reports/office-orders">
+    Auto-generate and email supervision, chief, and reliever duty orders to staff.
+  </Card>
+</CardGroup>
+
+## Workflow at a Glance
+
+<Steps>
+  <Step title="Upload the Timetable">
+    Upload the MSBTE-provided HTML or Excel timetable. TestForge parses subjects, schemes, dates, and sessions automatically.
+  </Step>
+  <Step title="Import Seating Charts">
+    Upload the seating arrangement Excel file from MSBTE. TestForge validates each student against known subjects and flags mismatches for review.
+  </Step>
+  <Step title="Allocate Blocks & Assign Staff">
+    Run automatic block allocation to seat students across blocks, then assign supervisors and relievers. Print allocation sheets directly from the browser.
+  </Step>
+  <Step title="Conduct the Exam">
+    Use the live dashboard to record attendance, mark absent students, handle copy cases, and account for question paper packets in real time.
+  </Step>
+  <Step title="Generate Reports">
+    Produce every required MSBTE form (F1–F22) plus TestForge's own summary reports with a single click. Print or download as PDF.
+  </Step>
+</Steps>
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 15, React 19, TypeScript |
+| Backend | FastAPI, Python 3.11 |
+| Database | PostgreSQL 16, Drizzle ORM |
+| Authentication | Better Auth (email + Google OAuth) |
+| Payments | Razorpay |
+| Deployment | Docker Compose |
+
+<Note>
+  TestForge is designed for MSBTE-affiliated examination centres. All report formats (F1–F22) match official MSBTE specifications for the current academic year.
+</Note>

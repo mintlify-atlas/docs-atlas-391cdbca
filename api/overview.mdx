@@ -1,0 +1,161 @@
+---
+title: "TestForge API Reference Overview"
+sidebarTitle: "Overview"
+description: "Explore the TestForge FastAPI backend — base URLs, route prefixes, response format, health endpoints, and links to every resource group."
+---
+
+TestForge exposes a RESTful HTTP API built with **FastAPI**. Every feature of the platform — from uploading MSBTE exam files to generating seating arrangements — is available through this API. The frontend Next.js application calls these endpoints directly, and third-party integrations can do the same.
+
+## Base URL
+
+| Environment | Base URL |
+|-------------|----------|
+| Development | `http://localhost:8000` |
+| Production | Configured via the `NEXT_PUBLIC_BACKEND_URL` environment variable |
+
+All resource endpoints are mounted under the `/api` prefix. For example, the upload router is reachable at `/api/upload`.
+
+<Note>
+  The backend server runs on port **8000** by default. If you change the port, update `NEXT_PUBLIC_BACKEND_URL` in your frontend `.env` file accordingly so the Next.js app can locate the service.
+</Note>
+
+## CORS
+
+Cross-Origin Resource Sharing is configured through the `CORS_ORIGINS` environment variable. Supply a comma-separated list of allowed origins:
+
+```bash
+CORS_ORIGINS=http://localhost:3000,https://testforge.example.com
+```
+
+The server permits all HTTP methods and headers from those origins and forwards credentials (cookies), which is required for session-based authentication.
+
+## Swagger UI (Debug Mode)
+
+When `DEBUG=true`, FastAPI mounts an interactive Swagger UI at `/docs`. This lets you explore and test every endpoint directly from your browser without a separate HTTP client.
+
+```bash
+# Enable debug mode in your backend .env
+DEBUG=true
+```
+
+Then visit: `http://localhost:8000/docs`
+
+<Warning>
+  Swagger UI is **disabled in production** (`DEBUG=false`). Never set `DEBUG=true` on a publicly accessible server — it exposes your full API surface to unauthenticated users.
+</Warning>
+
+## Health & Root Endpoints
+
+These two utility endpoints sit outside the `/api` prefix and require no authentication. Use them for readiness probes and uptime monitoring.
+
+### `GET /health`
+
+Returns the current health status of the service.
+
+```json
+{
+  "status": "healthy",
+  "service": "TestForge API",
+  "version": "1.0.0",
+  "testing_mode": false
+}
+```
+
+### `GET /`
+
+Returns basic service metadata.
+
+```json
+{
+  "name": "TestForge API",
+  "version": "1.0.0",
+  "status": "running",
+  "testing_mode": false
+}
+```
+
+The `testing_mode` flag reflects the value of the `TESTING` environment variable. When `true`, authentication is bypassed and the fixed `TEST_EXAM_CENTER_ID` is used for every request. See the [Authentication](/api/authentication) page for details.
+
+## Standard Response Format
+
+Every resource endpoint returns a consistent `APIResponse` envelope defined in `schemas.py`:
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": { },
+  "error": null
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `boolean` | `true` when the operation completed without errors |
+| `message` | `string` | Human-readable summary of the result |
+| `data` | `any \| null` | The response payload; `null` on failure |
+| `error` | `string \| null` | Error description; `null` on success |
+
+On failure the HTTP status code will be non-2xx and `success` will be `false`:
+
+```json
+{
+  "success": false,
+  "message": "Exam center not found",
+  "data": null,
+  "error": "Exam center not found"
+}
+```
+
+## Available API Routes
+
+All routers are registered under the `/api` prefix via a single `api_router` in `routers/__init__.py`.
+
+| Route Prefix | Resource | Description |
+|--------------|----------|-------------|
+| `/api/upload` | Upload | Ingest and validate MSBTE exam files (Excel, HTML) |
+| `/api/timetable` | Timetable | Retrieve and render exam timetable data |
+| `/api/seatingchart` | Seating Chart | Manage candidate-to-seat mappings |
+| `/api/seatingarrangement` | Seating Arrangement | Process and distribute seating arrangement sheets |
+| `/api/inventory` | Inventory | Track question-paper packet counts and distribution |
+| `/api/emarksheet` | E-Marksheet | Handle electronic mark-sheet metadata and lookups |
+
+## Explore the API
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/authentication">
+    Understand how session cookies, TESTING mode, and the `get_exam_center_id` dependency work.
+  </Card>
+  <Card title="Upload" icon="upload" href="/api/upload">
+    Upload and validate timetable, seating chart, seating arrangement, inventory, and e-marksheet files.
+  </Card>
+  <Card title="Timetable" icon="calendar" href="/api/timetable">
+    Fetch and display the MSBTE exam timetable for a given exam center.
+  </Card>
+  <Card title="Seating" icon="chair" href="/api/seating">
+    Manage seating charts and seating arrangement sheets for examination halls.
+  </Card>
+  <Card title="Inventory" icon="boxes" href="/api/inventory">
+    Track question-paper packet requirements and distribution records.
+  </Card>
+  <Card title="E-Marksheet" icon="file-lines" href="/api/emarksheet">
+    Query and manage electronic mark-sheet subject metadata.
+  </Card>
+</CardGroup>
+
+## Environment Variables
+
+The table below lists every environment variable consumed by the backend service.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/testforge` | PostgreSQL connection string |
+| `DEBUG` | `false` | Enables Swagger UI and debug logging when `true` |
+| `TESTING` | `false` | Bypasses authentication; uses `TEST_EXAM_CENTER_ID` |
+| `TEST_EXAM_CENTER_ID` | *(UUID)* | Exam center ID injected in testing mode |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated list of allowed CORS origins |
+| `SECRET_KEY` | — | Secret used for cryptographic operations |
+| `UPLOAD_DIR` | `uploads` | Directory where uploaded files are stored |
+| `MAX_UPLOAD_SIZE` | `10485760` (10 MB) | Maximum accepted file size in bytes |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Frontend base URL; used to call the Better Auth session endpoint |
+| `LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |

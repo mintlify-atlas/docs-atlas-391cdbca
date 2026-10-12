@@ -1,0 +1,146 @@
+---
+title: "Block Allocation & Supervisor Assignment — TestForge"
+sidebarTitle: "Block Allocation"
+description: "Assign students to exam blocks by date and session, enforce supervisor department-conflict rules, and print allocation sheets directly from the browser."
+---
+
+Block allocation is the process of distributing students across physical examination rooms (blocks) for a specific date and session. TestForge performs this step interactively — you choose a date and session, then assign groups of students from each scheme to available blocks while the system tracks remaining capacity in real time.
+
+All allocations are staged in browser-local storage before being submitted as a single atomic transaction, so a network interruption mid-allocation never leaves the database in a partial state.
+
+## What Is a Block?
+
+A block represents a physical examination room or hall. Each block has the following properties:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `block_no` | string | Short identifier (e.g., `1`, `A`, `301`) |
+| `location` | string | Room or hall identifier used as the allocation key (e.g., `301`, `Lab 1`) |
+| `name` | string | Human-readable name (e.g., `Block 301`, `Main Hall`) |
+| `strength` | integer | Total seating capacity |
+| `distribution` | integer[] | Seats per column, e.g., `[10, 10, 10, 10]` |
+| `template` | integer | Seating arrangement pattern (1 = Reverse Zigzag, 2 = Reverse, 3 = Linear, 4 = Linear Zigzag) |
+
+Blocks are configured under **Exam Setup → Blocks** before allocation begins. You can create blocks individually, import them from a CSV file, or export the existing list.
+
+<Tip>
+  Blocks can be viewed in **Grid** mode (with a live seating preview showing the arrangement template) or **Table** mode (a sortable spreadsheet view). The grid mode is useful for verifying that distributions are correct before allocation day.
+</Tip>
+
+## Block Allocations Data Model
+
+Each submitted allocation creates a row in the `block_allocations` table:
+
+| Column | Description |
+|--------|-------------|
+| `exam_center_id` | The exam center running the allocation |
+| `connected_institute_id` | Institute whose students are being allocated |
+| `date` | Exam date |
+| `session` | `Morning` or `Afternoon` |
+| `timeslot` | Time string from the timetable entry |
+| `block_id` | Internal block UUID |
+| `block_no` | Block number label |
+| `location` | Room/hall identifier |
+| `scheme` | Curriculum scheme code |
+| `subject_code` | Subject being examined |
+| `subject_name` | Subject display name |
+| `seat_numbers` | JSONB array of allocated seat numbers |
+| `first_seat` | Lowest seat number in this allocation |
+| `last_seat` | Highest seat number in this allocation |
+| `assigned_count` | Number of students in this allocation |
+| `strength` | Block total capacity |
+| `supervisor_uid` | Assigned supervisor's UID |
+| `supervisor_name` | Assigned supervisor's display name |
+
+## Allocation Workflow
+
+<Steps>
+  <Step title="Select date and session">
+    On the Block Allocation page, choose an exam date from the available dates (derived from the processed timetable) and a session (`Morning` or `Afternoon`). Click **Confirm** to load the timetable entries and available blocks for that slot.
+
+    If allocations already exist for the selected date and session, an **Existing Allocations** dialog appears listing the current records. You must navigate to **Clear Allocation** to remove them before creating new ones.
+  </Step>
+
+  <Step title="Review the timetable entries">
+    The timetable panel shows every subject scheduled for the selected date and session, with the number of students remaining to be allocated for each scheme. Rows with zero remaining students are dimmed. Click a row to pre-select that scheme in the assignment form.
+  </Step>
+
+  <Step title="Choose a block">
+    The available blocks strip shows all configured blocks as cards, each displaying remaining capacity (`remaining / total`). Full blocks are greyed out and unselectable. Click a block card to select it; a checkmark badge confirms the selection.
+  </Step>
+
+  <Step title="Fill the assignment form">
+    With a scheme and block selected, complete the assignment form:
+
+    - **Scheme** — auto-populated from the timetable click; shows subject code and remaining students
+    - **Block** — auto-populated from the block card click; shows name and remaining capacity
+    - **Supervisor** — select from the filtered supervisor list (see rules below)
+    - **Candidates** — enter the number of students to place in this block (maximum is `min(scheme remaining, block remaining)`)
+
+    Click **Assign** to stage the allocation in browser storage. The timetable remaining count and block remaining capacity update instantly.
+  </Step>
+
+  <Step title="Review the distribution table">
+    Every staged allocation appears in the **Block Distribution** table at the bottom of the page, showing block name, scheme, subject code, supervisor UID, and student count. Remove individual allocations with the delete button. The **Submit All** button is disabled until all students across every scheme have been assigned (remaining count = 0).
+  </Step>
+
+  <Step title="Submit all allocations">
+    Click **Submit All** to send the complete allocation batch to the backend in a single transaction. The backend validates that no allocations already exist for this date/session, then writes all rows to `block_allocations`. On success, the local storage draft is cleared and the session selector reappears.
+  </Step>
+</Steps>
+
+## Supervisor Assignment Rules
+
+The allocation form enforces two hard constraints when filtering the supervisor dropdown:
+
+<Note>
+  **Rule 1 — Department conflict:** A supervisor must be from a **different department** than the scheme being invigilated. For example, if the scheme starts with `CO` (Computer Engineering), no supervisor with department `CO` will appear in the list.
+
+  **Rule 2 — One block per session:** A supervisor can only be assigned to **one block** per date/session. Once a supervisor is assigned to any block in the current session draft, they are excluded from subsequent assignments.
+</Note>
+
+### Supervision Orders Filter
+
+An optional **Supervision Orders** toggle on the assignment form limits the supervisor list to staff who already have a printed supervision order for the selected date. This ensures that only officially rostered supervisors are assigned to blocks. The toggle shows the count of eligible supervisors when active.
+
+## Changing a Supervisor Post-Allocation
+
+To reassign a supervisor after an allocation has been submitted:
+
+1. Locate the block in the allocation view
+2. Use the **Change Supervisor** control to select a new supervisor
+3. The `supervisor_uid` and `supervisor_name` fields on the `block_allocations` row are updated immediately
+
+This does not require clearing and redoing the entire allocation.
+
+## Clearing an Allocation
+
+To reset a day's allocation (for example, after a timetable change):
+
+1. Go to **Block Allocation → Clear Allocation**
+2. Select the date and session to clear
+3. Confirm the deletion
+
+All `block_allocations` rows for that date and session are removed. The workflow can then be restarted from the session selection screen.
+
+<Warning>
+  Clearing an allocation also clears any locally staged draft for the same date/session. Any unsaved draft work will be shown in an **Unsaved Changes** dialog that requires explicit confirmation before the clear proceeds.
+</Warning>
+
+## Block Summary Strip
+
+During an active allocation session, a summary strip displays live statistics:
+
+| Metric | Description |
+|--------|-------------|
+| **Blocks** | Number of configured blocks |
+| **Capacity** | Combined total seats across all blocks |
+| **Subjects** | Number of timetable entries for this session |
+| **Assigned** | Total students staged so far |
+| **Remaining** | Students still needing allocation (shown in amber when > 0) |
+
+A progress bar below the strip fills as the remaining count decreases toward zero.
+
+## Printing Allocation Sheets
+
+After submission, allocation sheets can be printed directly from the browser. Each sheet shows the block name, location, exam date, session, subject, scheme, supervisor name, and the list of seat numbers allocated to that block. Navigate to the **Reports** section to generate printable allocation sheets in the official MSBTE format.

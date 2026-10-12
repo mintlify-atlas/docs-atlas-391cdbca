@@ -1,0 +1,100 @@
+---
+title: "TestForge Core Workflow Overview — Examination Lifecycle"
+sidebarTitle: "Overview"
+description: "A complete guide to the TestForge examination lifecycle, from timetable upload through block allocation, staff management, and MSBTE report generation."
+---
+
+TestForge automates the end-to-end MSBTE examination workflow for affiliated institutes. Instead of managing dozens of spreadsheets by hand, exam centers upload data once and let the platform orchestrate every step — from timetable parsing to generating official F1–F22 reports on exam day.
+
+The eight-step workflow below is strictly sequential. Each stage produces verified data that the next stage depends on, so completing every step in order is essential before conducting an examination.
+
+## The Examination Lifecycle
+
+<Steps>
+  <Step title="Upload Timetable">
+    Upload the MSBTE-issued timetable as either an **HTML file** (downloaded directly from the MSBTE website) or an **Excel file**. The `TimetableProcessor` backend class parses every row into structured entries containing the exam date, session (Morning / Afternoon), time slot, subject code, subject name, and applicable scheme. Student counts remain zero at this point and are populated later when seating data arrives.
+
+    **Outcome:** A paginated, filterable timetable table with exam day numbers, dates, sessions, subject codes, scheme badges, and student totals.
+  </Step>
+
+  <Step title="Import Seating Chart">
+    For each connected institute, upload its seating chart — an Excel file listing students with their seat numbers, enrollment numbers, names, schemes, and subject abbreviations. The processor maps subject abbreviations to subject codes using the pre-loaded subject cache and writes every student record to the `students` table. Timetable student counts are automatically recalculated after each chart is processed.
+
+    **Outcome:** A verified student roster linked to seat numbers and connected institutes, with timetable counts reflecting actual examinee totals.
+  </Step>
+
+  <Step title="Verify Students">
+    Upload the official MSBTE seating arrangement file (Excel), which contains one row per paper per student in the format: **SR No | Seat Number | Inst Code | Course Code | Semester | Master Code | Paper Code**. The processor groups rows by student, then cross-validates each student's paper codes against the subject codes already stored in the database from the seating chart import.
+
+    If any mismatches are found, the system returns a `temp_session_id`. The admin reviews the discrepancies and selects **Confirm Fix** (to auto-correct using database truth) or **Cancel** (to abort without saving). Only after all students are verified does the workflow proceed.
+
+    **Outcome:** Student records are fully validated against the official MSBTE seating arrangement, with all subject-to-seat mappings reconciled.
+  </Step>
+
+  <Step title="Allocate Blocks">
+    Select an exam date and session to enter the block allocation screen. Assign groups of students from each scheme to physical examination blocks (classrooms / halls). Each block has a defined capacity and a column distribution (e.g., `[10, 10, 10, 10]`). Allocations are staged locally in browser storage before being submitted as a single batch transaction, preventing partial saves.
+
+    **Outcome:** Every student for the selected date and session is assigned to a block, with seat ranges (`first_seat` – `last_seat`) recorded in the `block_allocations` table.
+  </Step>
+
+  <Step title="Assign Supervisors">
+    During block allocation, each block is assigned a supervisor. The supervisor selector enforces two business rules: a supervisor must be from a **different department** than the scheme being invigilated, and a supervisor can only be assigned to **one block per session**. Supervisors can be reassigned post-allocation without clearing the entire allocation.
+
+    **Outcome:** Every allocated block has a named supervisor linked by UID, enabling duty order generation and attendance tracking on exam day.
+  </Step>
+
+  <Step title="Generate Office Orders">
+    TestForge generates printable duty orders for supervisors, relievers, and control room staff based on the completed allocations. Supervision orders are date- and session-scoped. The block allocation screen can optionally filter the supervisor list to show only staff who already have a supervision order for that date, ensuring orders and allocations stay in sync.
+
+    **Outcome:** Printed or emailed duty orders distributed to all examination staff before the exam day.
+  </Step>
+
+  <Step title="Conduct Examination">
+    On exam day, the **Exam Day Dashboard** provides live attendance tracking, copy-case management, missing-packet alerts, and real-time progress statistics. The Question Paper Inventory module tracks packet issue and return for each block. Relievers can be dispatched to cover absent supervisors.
+
+    **Outcome:** A fully supervised, live-tracked examination with all operational data captured for post-exam reporting.
+  </Step>
+
+  <Step title="Generate MSBTE Reports">
+    After the examination, generate all official MSBTE formats directly from TestForge: **F1 through F22**, seating statements, attendance sheets, supervisor reports, packet accounting sheets, and control room reports. All data is derived from the verified records built across the preceding seven steps.
+
+    **Outcome:** Ready-to-submit MSBTE compliance reports generated in minutes rather than days.
+  </Step>
+</Steps>
+
+## Explore the Core Workflow
+
+<CardGroup cols={2}>
+  <Card
+    title="Timetable"
+    icon="calendar"
+    href="/workflow/timetable"
+  >
+    Upload and process the MSBTE timetable from an HTML or Excel file. Learn how the `TimetableProcessor` parses subjects, dates, sessions, and schemes.
+  </Card>
+  <Card
+    title="Seating"
+    icon="chair"
+    href="/workflow/seating"
+  >
+    Import the institute seating chart and the official MSBTE seating arrangement. Understand the mismatch-correction flow using `temp_session_id`.
+  </Card>
+  <Card
+    title="Block Allocation"
+    icon="table-cells"
+    href="/workflow/block-allocation"
+  >
+    Allocate students to examination blocks by date and session, assign supervisors, and print allocation sheets directly from the browser.
+  </Card>
+  <Card
+    title="Staff Management"
+    icon="users"
+    href="/workflow/staff-management"
+  >
+    Manage supervisors, relievers, and control room staff. Understand staff types, duty orders, and availability tracking.
+  </Card>
+</CardGroup>
+
+<Note>
+  The workflow is designed to be completed in order. Skipping or reprocessing an earlier step (for example, re-uploading a seating chart after block allocation is complete) will recalculate student counts and may require re-running downstream steps.
+</Note>

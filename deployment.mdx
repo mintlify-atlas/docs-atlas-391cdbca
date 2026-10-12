@@ -1,0 +1,316 @@
+---
+title: "Deploy the Full TestForge Stack with Docker Compose"
+sidebarTitle: "Deployment"
+description: "Deploy TestForge to production via Docker Compose: Postgres, migration runner, FastAPI backend, and Next.js frontend — health checked and volume backed."
+---
+
+The recommended way to run TestForge in production is with **Docker Compose**. A single `docker-compose up -d` command brings up all four services — the database, migration runner, FastAPI backend, and Next.js frontend — wired together on a private bridge network with health checks and persistent volumes.
+
+<Tip>
+  Need an air-gapped, fully offline deployment? TestForge also ships a **Lifetime Offline Edition** designed for institutes without reliable internet access. See the [Offline Edition](#offline-lifetime-edition) section below.
+</Tip>
+
+## Architecture Overview
+
+The `docker-compose.yml` defines four services that start in a strict dependency order:
+
+| Service | Image | Internal Port | Host Port |
+|---|---|---|---|
+| `postgres` | `postgres:16-alpine` | 5432 | **4935** |
+| `migrate` | Local build (`database/Dockerfile`) | — | — |
+| `backend` | `1ndrajeet/testforge-backend:latest` | 8000 | **4936** |
+| `frontend` | `1ndrajeet/testforge-frontend:lightweight` | 3000 | **4937** |
+
+All four services join the `testforge-network` bridge network so they can reach each other by container name (e.g. the backend connects to Postgres as `testforge-postgres`).
+
+## Deployment Steps
+
+<Steps>
+  <Step title="Install Docker and Docker Compose">
+    Ensure Docker Engine and Docker Compose are installed on your server.
+
+    ```bash
+    docker --version
+    docker compose version
+    ```
+
+    Docker Desktop includes both tools. On Linux servers, install the Docker Engine package and the Compose plugin separately from [docs.docker.com](https://docs.docker.com/engine/install/).
+  </Step>
+
+  <Step title="Place the Compose File">
+    Copy `docker-compose.yml` and the `database/` directory to your deployment folder on the server. The `migrate` service builds locally from `database/Dockerfile`, so that folder must be present.
+
+    ```bash
+    scp -r docker-compose.yml database/ user@your-server:/opt/testforge/
+    cd /opt/testforge
+    ```
+  </Step>
+
+  <Step title="Create the Environment File">
+    Create a `.env` file in the same directory as `docker-compose.yml`. Docker Compose reads this file automatically and substitutes all `${VARIABLE}` placeholders in the Compose file.
+
+    ```env
+    # ── Postgres Credentials ─────────────────────────────────────────────────────
+    POSTGRES_USER=postgres
+    POSTGRES_PASSWORD=your-strong-database-password
+    POSTGRES_DB=testforge
+
+    # ── Database URL (used by migrate, backend, and frontend) ────────────────────
+    # Uses the service name as the hostname inside the Docker network
+    DATABASE_URL=postgresql://postgres:your-strong-database-password@testforge-postgres:5432/testforge
+
+    # ── Migration Service ────────────────────────────────────────────────────────
+    DOCKER_ENV=production
+    IS_DOCKER=true
+
+    # ── Backend ──────────────────────────────────────────────────────────────────
+    DEBUG=False
+    TESTING=False
+    TEST_EXAM_CENTER_ID=
+    SECRET_KEY=your-secret-key-min-32-chars
+    CORS_ORIGINS=http://localhost:4937
+
+    # Upload
+    UPLOAD_DIR=/app/uploads
+    MAX_UPLOAD_SIZE=10485760
+
+    # Auth (shared with frontend)
+    BETTER_AUTH_SECRET=your-better-auth-secret-min-32-chars
+    BETTER_AUTH_URL=http://localhost:4937
+
+    # Logging
+    LOG_LEVEL=INFO
+
+    # ── Frontend ─────────────────────────────────────────────────────────────────
+    # Google OAuth
+    GOOGLE_CLIENT_ID=
+    GOOGLE_CLIENT_SECRET=
+
+    # Razorpay
+    NEXT_PUBLIC_RAZORPAY_KEY_ID=
+    RAZORPAY_KEY_ID=
+    RAZORPAY_KEY_SECRET=
+    RAZORPAY_WEBHOOK_SECRET=
+
+    # Resend Email
+    RESEND_API_KEY=
+    NEXT_PUBLIC_EMAIL_FROM=noreply@yourdomain.com
+    NEXT_PUBLIC_REPLY_TO=support@yourdomain.com
+    EMAIL_FROM=noreply@yourdomain.com
+    REPLY_TO=support@yourdomain.com
+
+    # URLs
+    NEXT_PUBLIC_APP_URL=http://localhost:4937
+    NEXT_PUBLIC_HOSTED_URL=https://yourdomain.com
+    NEXT_PUBLIC_BACKEND_URL=http://localhost:4936
+
+    # Environment
+    NODE_ENV=production
+    ```
+
+    <Warning>
+      Never commit your `.env` file to version control. Add it to `.gitignore` immediately. Use strong, randomly generated values for `SECRET_KEY`, `BETTER_AUTH_SECRET`, and `POSTGRES_PASSWORD`.
+    </Warning>
+  </Step>
+
+  <Step title="Create Persistent Data Directories">
+    The Compose file maps two host paths to container volumes. Create them before starting the stack so Docker does not create them as root-owned directories.
+
+    ```bash
+    mkdir -p ./data/postgres
+    mkdir -p ./data/uploads
+    ```
+
+    | Volume Mount | Purpose |
+    |---|---|
+    | `./data/postgres` | PostgreSQL 16 data files — survives container restarts |
+    | `./data/uploads` | Question paper and timetable file uploads from the backend |
+  </Step>
+
+  <Step title="Start the Full Stack">
+    Bring up all four services in detached mode.
+
+    ```bash
+    docker-compose up -d
+    ```
+
+    Docker Compose starts the services in dependency order:
+
+    1. `postgres` starts and waits until its health check passes (`pg_isready`)
+    2. `migrate` runs, applies the database schema, then exits with code 0
+    3. `backend` and `frontend` start only after `migrate` completes successfully
+
+    <Note>
+      The `migrate` container is a one-shot service (`restart: "no"`). It runs the database schema push once and exits. If it fails, `backend` and `frontend` will not start — check its logs first.
+    </Note>
+  </Step>
+
+  <Step title="Verify All Services Are Running">
+    Check the status of every container:
+
+    ```bash
+    docker-compose ps
+    ```
+
+    You should see `testforge-postgres`, `testforge-backend`, and `testforge-frontend` with a status of `Up`. The `testforge-migrate` container will show `Exited (0)` — this is expected and correct.
+
+    Tail the logs if you need to debug a service:
+
+    ```bash
+    # All services
+    docker-compose logs -f
+
+    # A specific service
+    docker-compose logs -f backend
+    docker-compose logs -f migrate
+    ```
+  </Step>
+
+  <Step title="Access the Application">
+    Once all services are healthy, the application is available on the following host ports:
+
+    | Service | URL |
+    |---|---|
+    | **Frontend** | `http://your-server-ip:4937` |
+    | **Backend API** | `http://your-server-ip:4936` |
+    | **Postgres** | `localhost:4935` (local access only) |
+
+    <Tip>
+      For production deployments, place a reverse proxy such as **Nginx** or **Caddy** in front of port `4937` (and optionally `4936`) to terminate TLS and serve the application over HTTPS.
+    </Tip>
+  </Step>
+</Steps>
+
+## Service Configuration Reference
+
+<CodeGroup>
+  ```yaml postgres
+  postgres:
+    image: postgres:16-alpine
+    container_name: testforge-postgres
+    restart: unless-stopped
+    ports:
+      - "4935:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - testforge-network
+  ```
+
+  ```yaml migrate
+  migrate:
+    build:
+      context: .
+      dockerfile: database/Dockerfile
+    container_name: testforge-migrate
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DOCKER_ENV: ${DOCKER_ENV}
+      IS_DOCKER: ${IS_DOCKER}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - testforge-network
+  ```
+
+  ```yaml backend
+  backend:
+    image: 1ndrajeet/testforge-backend:latest
+    container_name: testforge-backend
+    restart: unless-stopped
+    ports:
+      - "4936:8000"
+    volumes:
+      - ./data/uploads:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - testforge-network
+  ```
+
+  ```yaml frontend
+  frontend:
+    image: 1ndrajeet/testforge-frontend:lightweight
+    container_name: testforge-frontend
+    restart: unless-stopped
+    ports:
+      - "4937:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
+    networks:
+      - testforge-network
+  ```
+</CodeGroup>
+
+## Managing the Deployment
+
+```bash
+# Stop all services (preserves data volumes)
+docker-compose down
+
+# Stop and remove volumes — WARNING: deletes all database data and uploads
+docker-compose down -v
+
+# Restart a single service
+docker-compose restart backend
+
+# Pull latest images and redeploy
+docker-compose pull
+docker-compose up -d
+```
+
+## Offline / Lifetime Edition
+
+The **TestForge Lifetime Offline Edition** is a bundled, self-contained package designed for institutes that operate without a reliable internet connection. It uses the same Docker Compose stack but ships with all images pre-loaded — no pull required after the initial install.
+
+<Steps>
+  <Step title="Install Docker Desktop">
+    Download and install Docker Desktop from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/).
+  </Step>
+
+  <Step title="Run the Installer Script">
+    The offline bundle includes a platform-native installer that loads Docker images and starts the stack automatically.
+
+    <CodeGroup>
+      ```bat Windows
+      REM Double-click install.bat, or run from Command Prompt:
+      install.bat
+      ```
+
+      ```bash Linux / macOS
+      chmod +x install.sh
+      ./install.sh
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Access the Application">
+    After the installer completes, open your browser and navigate to `http://localhost:4937`. No internet connection is required for ongoing use.
+  </Step>
+</Steps>
+
+<Note>
+  The Lifetime Offline Edition uses the same `docker-compose.yml` configuration and port mappings (`4935`, `4936`, `4937`) as the standard deployment. All features are available offline, including report generation and question paper accounting.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Workflow Overview" icon="arrow-progress" href="/workflow/overview">
+    Explore the end-to-end examination workflow TestForge manages for MSBTE institutes.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Browse the FastAPI backend endpoints available at port 4936.
+  </Card>
+</CardGroup>

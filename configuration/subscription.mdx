@@ -1,0 +1,140 @@
+---
+title: "Subscription & Billing — TestForge Configuration"
+sidebarTitle: "Subscription"
+description: "Configure Razorpay payments, manage subscription plans and promo codes, and understand the TestForge billing lifecycle for MSBTE exam center access."
+---
+
+TestForge uses **Razorpay** as its payment processor to gate access to exam management features. Every organization must hold an active subscription — or a valid trial — before it can manage timetables, allocations, staff, and question paper inventory.
+
+<Note>
+  Exam management features (timetable, block allocations, staff, QP inventory, uploads) are only accessible when an organization's `subscription_tier` is not `inactive` and `subscription_expires_at` is in the future. After expiry, the dashboard remains readable but write operations are blocked until the subscription is renewed.
+</Note>
+
+## Razorpay Configuration
+
+TestForge requires four Razorpay credentials, split between client-side and server-side use. Set these in `frontend/.env`:
+
+| Variable | Scope | Description | Example |
+|---|---|---|---|
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Client-side | Publishable key embedded in the browser bundle to initialise the Razorpay checkout widget. | `rzp_live_xxxxxxxxxxxx` |
+| `RAZORPAY_KEY_ID` | Server-side | Key ID used by Next.js API routes to create Razorpay orders via the server SDK. | `rzp_live_xxxxxxxxxxxx` |
+| `RAZORPAY_KEY_SECRET` | Server-side | Key secret used to authenticate Razorpay API calls and verify payment signatures. | `xxxxxxxxxxxxxxxxxxxxxxxx` |
+| `RAZORPAY_WEBHOOK_SECRET` | Server-side | Shared secret configured in the Razorpay dashboard to validate the HMAC signature of incoming webhook events. | `whsec_xxxxxxxxxxxxxxxx` |
+
+<Warning>
+  Keep `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` strictly server-side. Never prefix them with `NEXT_PUBLIC_` — doing so would expose them in the client bundle.
+</Warning>
+
+### Obtaining Credentials
+
+1. Log in to the [Razorpay Dashboard](https://dashboard.razorpay.com).
+2. Go to **Settings → API Keys** and generate a key pair. Copy both `Key ID` and `Key Secret`.
+3. Go to **Settings → Webhooks**, create a new webhook pointing to `https://<your-domain>/api/payments/webhook`, select the `payment.captured` event, and copy the webhook secret.
+
+## Subscription Lifecycle
+
+```
+User signs up
+     │
+     ▼
+Onboarding wizard
+  ├── Creates organization (slug, name)
+  └── Creates exam center (code, name, address, officers)
+     │
+     ▼
+Billing page (/billing)
+  ├── Select a plan
+  ├── (Optional) Apply promo code
+  └── Razorpay checkout widget opens
+     │
+     ▼
+POST /api/payments/checkout
+  └── Creates Razorpay order, stores pending payment record
+     │
+     ▼
+User completes payment in widget
+     │
+     ▼
+Razorpay webhook → POST /api/payments/webhook
+  └── Verifies HMAC signature
+  └── Activates subscription_tier + sets subscription_expires_at
+     │
+     ▼
+Exam management features unlocked
+```
+
+### Onboarding
+
+After a user registers, they are directed through an onboarding flow before reaching the main dashboard. Onboarding collects:
+
+- **Organization details** — name and URL slug (must be globally unique).
+- **Exam center details** — center code, name, address, officer-in-charge, sealing supervisor, exam controller, and district center information.
+
+Completing onboarding creates one `organizations` record and one `exam_centers` record. The authenticated user is automatically set as the organization owner (`owner_id`) and added to `org_members` with the `owner` role.
+
+## Payment API Routes
+
+| Route | Method | Description |
+|---|---|---|
+| `/api/payments/checkout` | `POST` | Creates a Razorpay order for the selected plan and inserts a `payments` record with `status = pending`. Returns the Razorpay `order_id` and amount to the client. |
+| `/api/payments/history` | `GET` | Returns the paginated payment history for the current organization. |
+| `/api/payments/webhook` | `POST` | Receives Razorpay webhook events. Verifies the `x-razorpay-signature` header and, on a successful `payment.captured` event, updates the payment status and activates the subscription. |
+
+## Database Schema
+
+### `payments` Table
+
+Stores one record per checkout attempt, linked to the organization that initiated it.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `uuid` | Primary key. |
+| `org_id` | `uuid` | Foreign key → `organizations.id`. Cascade deletes. |
+| `plan_id` | `text` | Internal plan identifier (e.g., `monthly`, `annual`). |
+| `plan_name` | `text` | Human-readable plan name displayed in the UI. |
+| `amount` | `integer` | Amount in the smallest currency unit (paise for INR). |
+| `status` | `text` | Payment lifecycle state: `pending`, `captured`, `failed`. |
+| `promo_code_id` | `uuid` | Optional FK → `promo_codes.id`. Set when a promo code was applied. |
+| `razorpay_order_id` | `text` | Razorpay order ID (unique index). Used for idempotent webhook processing. |
+| `razorpay_payment_id` | `text` | Razorpay payment ID returned after capture. |
+| `start_date` | `timestamp` | Subscription start date set on successful capture. |
+| `end_date` | `timestamp` | Subscription expiry date set on successful capture. |
+
+### `promo_codes` Table
+
+Promo codes grant discounted or free subscription durations and can be applied at checkout.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `uuid` | Primary key. |
+| `code` | `text` | Unique discount code entered by the user. |
+| `type` | `text` | Code type (e.g., `discount`, `free_trial`). |
+| `duration_days` | `integer` | Number of subscription days granted. Defaults to `30`. |
+| `amount` | `integer` | Discount amount in paise. Defaults to `100`. |
+| `is_used` | `boolean` | `true` once the code has been redeemed. Codes are single-use. |
+| `used_by_org_id` | `uuid` | FK → `organizations.id`. Set on redemption. |
+| `used_at` | `timestamp` | Timestamp of redemption. |
+| `expires_at` | `timestamp` | Optional hard expiry — the code cannot be used after this date. |
+
+## Promo Codes
+
+Promo codes can be applied on the `/billing` page before confirming a payment. The checkout flow validates the code server-side, checks `is_used` and `expires_at`, and deducts the discount from the order amount before creating the Razorpay order. Once a payment containing a promo code is successfully captured, `promo_codes.is_used` is set to `true` and `used_by_org_id` is stamped with the redeeming organization's ID.
+
+<Note>
+  Each promo code is single-use. Attempting to reuse a code whose `is_used` flag is `true` will return a validation error at checkout.
+</Note>
+
+## Testing Payments
+
+Razorpay provides a **test mode** (keys prefixed with `rzp_test_`) that allows end-to-end payment flows without real money. Use test credentials in your development and staging environments:
+
+```env
+NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
+RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
+RAZORPAY_KEY_SECRET=your-test-secret
+RAZORPAY_WEBHOOK_SECRET=your-test-webhook-secret
+```
+
+<Tip>
+  When testing webhooks locally, use [Razorpay's webhook simulator](https://dashboard.razorpay.com/app/webhooks) or a tool like `ngrok` to expose your local `/api/payments/webhook` endpoint. Confirm that the `RAZORPAY_WEBHOOK_SECRET` in your `.env` matches the secret configured on the Razorpay webhook settings page exactly.
+</Tip>

@@ -1,0 +1,153 @@
+---
+title: "Database Setup & Schema — TestForge Configuration"
+sidebarTitle: "Database"
+description: "Set up PostgreSQL 16 for TestForge, run Drizzle ORM migrations, explore the multi-tenant schema, and manage your database with the built-in CLI commands."
+---
+
+TestForge uses **PostgreSQL 16** as its sole datastore, accessed from the Next.js frontend through **Drizzle ORM** and from the FastAPI backend via **SQLAlchemy**. The schema is defined in `frontend/src/lib/db/schema.ts` and versioned through Drizzle's migration tooling — the backend reads from the same database but does not own the schema.
+
+## Docker Database Service
+
+When running TestForge with Docker Compose, a `postgres:16-alpine` container is provisioned automatically with the following defaults:
+
+```yaml
+# docker-compose.yml (excerpt)
+postgres:
+  image: postgres:16-alpine
+  container_name: testforge-postgres
+  ports:
+    - "4935:5432"        # host port 4935 → container port 5432
+  volumes:
+    - ./data/postgres:/var/lib/postgresql/data
+```
+
+The host-side port `4935` is used intentionally to avoid conflicts with an existing local PostgreSQL instance. Set your `DATABASE_URL` accordingly:
+
+```env
+DATABASE_URL=postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:4935/<POSTGRES_DB>
+```
+
+A `migrate` service runs automatically after the database becomes healthy and applies any pending migrations before the frontend or backend containers start.
+
+## Drizzle ORM Configuration
+
+Drizzle is configured in `frontend/drizzle.config.ts`:
+
+```typescript
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/lib/db/schema.ts",
+  out: "./drizzle",
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+```
+
+Migration SQL files are generated into the `frontend/drizzle/` directory and committed alongside the source code so deployments are fully reproducible.
+
+## Database CLI Commands
+
+All database operations are available as `pnpm` scripts from inside the `frontend/` directory.
+
+### Development (uses `frontend/.env`)
+
+| Command | Script | Description |
+|---|---|---|
+| `pnpm db:push` | `drizzle-kit push` | Directly pushes the current schema to the database without generating migration files. Fastest for local iteration. |
+| `pnpm db:generate` | `drizzle-kit generate` | Generates a new SQL migration file in `frontend/drizzle/` based on schema changes. |
+| `pnpm db:migrate` | `tsx src/scripts/migrate.ts` | Runs all pending migration files against the database in order. |
+| `pnpm db:seed` | `tsx src/scripts/seed.ts` | Seeds the database with initial reference data (subjects, promo codes, etc.). |
+| `pnpm db:setup` | `db:migrate` + `db:seed` | Runs migrations then seeds in a single command. Useful for a clean environment setup. |
+| `pnpm db:studio` | `drizzle-kit studio` | Opens the Drizzle Studio web GUI for browsing and editing data interactively. |
+
+### Production (uses `frontend/.env.production`)
+
+| Command | Script | Description |
+|---|---|---|
+| `pnpm pdb:push` | `dotenv -e .env.production -- drizzle-kit push` | Pushes schema directly to the production database. |
+| `pnpm pdb:generate` | `dotenv -e .env.production -- drizzle-kit generate` | Generates a migration file using the production database connection. |
+| `pnpm pdb:studio` | `dotenv -e .env.production -- drizzle-kit studio` | Opens Drizzle Studio connected to the production database. |
+
+<Warning>
+  The `pdb:*` commands connect directly to your production database. Run `pdb:push` only if you are certain about the schema change — it bypasses the migration history and cannot be automatically rolled back.
+</Warning>
+
+<Tip>
+  Use `pnpm db:studio` (or `pnpm pdb:studio` for production) to visually inspect rows, debug allocation issues, or verify seed data without writing raw SQL. Drizzle Studio runs at `https://local.drizzle.studio` by default.
+</Tip>
+
+## Schema Overview
+
+The initial migration (`frontend/drizzle/0000_bizarre_adam_warlock.sql`) establishes the full schema. Tables are organized into functional groups.
+
+### Multi-Tenant Hierarchy
+
+TestForge is multi-tenant — every piece of exam data is scoped under an organization and its exam center.
+
+| Table | Key Columns | Description |
+|---|---|---|
+| `organizations` | `id`, `slug`, `owner_id`, `subscription_tier`, `subscription_expires_at`, `razorpay_customer_id` | Top-level tenant. Holds subscription status and Razorpay customer linkage. Each slug is unique. |
+| `org_members` | `org_id`, `user_id`, `role`, `permissions` (jsonb) | Maps users to organizations with a role and a fine-grained permissions array. Unique on `(org_id, user_id)`. |
+| `exam_centers` | `id`, `org_id`, `code`, `name`, `season`, `exam_year`, `start_date`, `end_date`, `departments` (jsonb) | Represents a physical MSBTE exam center. Each organization has at most one exam center (unique index on `org_id`). |
+| `connected_institutes` | `exam_center_id`, `institute_code`, `institute_name` | Institutes whose students are appearing at this exam center. Unique on `(exam_center_id, institute_code)`. |
+
+### Exam Data
+
+| Table | Key Columns | Description |
+|---|---|---|
+| `timetable` | `exam_center_id`, `date`, `session`, `time_slot`, `subject_code`, `scheme`, `total_students`, `absent_numbers` (jsonb) | Exam schedule entries. Unique on `(exam_center_id, date, session, subject_code, scheme)`. |
+| `students` | `exam_center_id`, `connected_institute_id`, `seat_number`, `enrollment_number`, `subjects` (jsonb), `sub_codes` (jsonb) | Student records with seat numbers and enrolled subjects stored as JSONB arrays. Unique on `(exam_center_id, seat_number)`. |
+| `blocks` | `exam_center_id`, `block_no`, `location`, `name`, `strength`, `distribution` (jsonb) | Exam room/hall definitions. Unique on `(exam_center_id, location)`. |
+| `block_allocations` | `exam_center_id`, `date`, `session`, `block_id`, `subject_code`, `seat_numbers` (jsonb), `supervisor_uid` | Student-to-block assignments per date, session, and subject. Unique on `(exam_center_id, date, session, block_id, subject_code)`. |
+| `staff` | `exam_center_id`, `uid`, `name`, `staff_type`, `role`, `designation` | Supervisors, relievers, and control room staff. Unique on `(exam_center_id, uid)`. |
+
+### Operations & Tracking
+
+| Table | Key Columns | Description |
+|---|---|---|
+| `uploads` | `exam_center_id`, `file_type`, `original_filename`, `file_hash`, `status`, `record_count`, `metadata` (jsonb) | Tracks every file upload (timetables, student data, QP files). Unique on `(exam_center_id, file_type, connected_institute_id)`. |
+| `qp_inventory` | `exam_center_id`, `date`, `session`, `subject_code`, `expected_packets`, `received_packets`, `received_qps` | Question paper packet tracking per session. Unique on `(exam_center_id, date, session, subject_code)`. |
+
+### Billing
+
+| Table | Key Columns | Description |
+|---|---|---|
+| `payments` | `org_id`, `plan_id`, `plan_name`, `amount`, `status`, `razorpay_order_id`, `razorpay_payment_id`, `promo_code_id` | Subscription payment records. `razorpay_order_id` has a unique index for idempotent webhook handling. |
+| `promo_codes` | `code`, `type`, `duration_days`, `amount`, `is_used`, `used_by_org_id`, `expires_at` | Discount codes redeemable at checkout. `code` is unique. One-time use — `is_used` is set to `true` after redemption. |
+
+### Audit & Observability
+
+| Table | Key Columns | Description |
+|---|---|---|
+| `audit_logs` | `org_id`, `user_id`, `action`, `entity_type`, `entity_id`, `old_values` (jsonb), `new_values` (jsonb), `ip_address` | Immutable audit trail for all data-mutating operations. Indexed on `(org_id, created_at)` and `(entity_type, entity_id)`. |
+| `email_logs` | `org_id`, `exam_center_id`, `user_id`, `recipient_email`, `subject`, `order_type`, `status`, `error_message` | Record of every outbound email dispatched via Resend, including delivery status and error details. |
+
+### Auth Tables (Better Auth managed)
+
+| Table | Description |
+|---|---|
+| `user` | Core user identity — name, email, email verification status. |
+| `account` | OAuth provider accounts linked to a user (e.g., Google). |
+| `session` | Active user sessions with expiry. |
+| `verification` | Email verification and magic-link tokens. |
+
+<Note>
+  The `user`, `account`, `session`, and `verification` tables are fully managed by [Better Auth](https://better-auth.com). Do not modify them manually — always use the Better Auth API for user and session operations.
+</Note>
+
+## First-Time Setup
+
+```bash
+# 1. Start the database container
+docker compose up postgres -d
+
+# 2. From the frontend directory — run migrations then seed
+cd frontend
+pnpm db:setup
+
+# 3. (Optional) Inspect data in the browser UI
+pnpm db:studio
+```

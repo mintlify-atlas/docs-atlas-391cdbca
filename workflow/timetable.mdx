@@ -1,0 +1,150 @@
+---
+title: "MSBTE Timetable Upload & Processing — TestForge Guide"
+sidebarTitle: "Timetable"
+description: "Upload the MSBTE timetable as HTML or Excel and learn how TimetableProcessor parses subjects, schemes, dates, and sessions into optimised database records."
+---
+
+The timetable is the foundation of every examination cycle in TestForge. Every downstream step — seating chart import, student counts, block allocation — depends on a correctly processed timetable. Upload the official MSBTE timetable once per examination season and the platform derives all scheduling data automatically.
+
+## Supported File Formats
+
+TestForge accepts two timetable formats:
+
+| Format | Source | Notes |
+|--------|--------|-------|
+| **HTML** | Saved directly from the MSBTE website | Preferred format; parsed by `TimetableProcessor` using BeautifulSoup4 |
+| **Excel** | Exported or manually prepared `.xlsx` / `.xls` | Processed via Pandas; column mapping is flexible |
+
+<Tip>
+  Use the HTML file downloaded from the MSBTE website whenever possible. The structured markup allows the parser to extract exam day numbers, date strings, session labels (Morning / Afternoon), time slots, subject codes, subject names, and schemes without any manual reformatting.
+</Tip>
+
+## How the Backend Processes the Timetable
+
+The `TimetableProcessor` class in `backend/routers/timetable.py` handles all parsing and insertion logic.
+
+### Subject Cache Pre-Loading
+
+When the processor initialises, it loads every active subject from the database into an in-memory dictionary keyed by `{code}_{scheme}`:
+
+```python
+def _load_subject_cache(self) -> Dict[str, Dict]:
+    result = db.execute_query("""
+        SELECT code, scheme, abbr, id, name
+        FROM subjects
+        WHERE is_deleted = false
+    """)
+    # Builds cache entries for both original and normalised scheme strings
+```
+
+Each cache entry stores the subject's `abbr`, `id`, `name`, and `original_scheme`. Normalised scheme variants (e.g., `K-17` → `K17`) are cached under a second key, so mismatches caused by hyphen differences are resolved automatically.
+
+<Note>
+  Subjects must be **pre-seeded** in the `subjects` table before uploading a timetable. If a subject code is not found in the cache, the timetable entry is still inserted but the `subject_id` and `subject_abbr` columns will be `NULL`. Run the subject seeding script before processing any timetable for the first time.
+</Note>
+
+### Parsing the HTML File
+
+The parser scans every `<table>` element in the uploaded HTML, locates the preceding session header `<div>`, and extracts:
+
+- **Date** — matched with regex `Date:\s*(\d{2}-\d{2}-\d{4})` and converted to `YYYY-MM-DD`
+- **Exam Day** — matched with `Day:\s*(\d+)`
+- **Session** — `Morning` or `Afternoon` based on text and emoji markers (`🌅` / `🌙`)
+- **Time Slot** — cell index 3 in each data row
+- **Subject Code** — cell index 4
+- **Subject Name** — cell index 5
+- **Schemes** — cell index 6, comma-separated; one timetable entry is created per scheme
+
+If the primary parsing pass finds no entries, an alternative parser scans `<div>` blocks with `session` or `header` class names instead.
+
+### NeonDB-Optimised Batch Insertion
+
+Parsed entries are written to the `timetable` table using batched `INSERT` statements tuned for NeonDB's free tier:
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `BATCH_SIZE` | `250` | Maximum rows per single `INSERT` |
+| `COMMIT_INTERVAL` | `5` | Batches between implicit commits |
+| Statement timeout | `120 s` | Prevents long-running query kills |
+| Inter-batch pause | `50 ms` | Reduces connection pressure |
+
+The processor **deletes all existing timetable rows** for the exam center before inserting fresh data, ensuring there are no duplicate entries from a re-upload.
+
+```python
+# Simplified batch insert loop
+for i in range(0, len(entries), batch_size):
+    batch = entries[i:i + batch_size]
+    # Build named-parameter INSERT for all rows in the batch
+    db.execute_update(query, params)
+    if i + batch_size < len(entries):
+        time.sleep(0.05)
+```
+
+## Upload Steps
+
+<Steps>
+  <Step title="Open the Timetable page">
+    Navigate to **Exam Setup → Timetable**. If no timetable has been uploaded yet, the upload panel is shown immediately. If a timetable already exists, click **Upload New** in the top-right corner to replace it.
+  </Step>
+
+  <Step title="Select your file">
+    Use the `UniversalFileUploader` component to choose your HTML or Excel file. The uploader accepts files with the `timetable` type tag. Your exam center code (`ecCode`) is automatically attached to the upload request.
+
+    ```text
+    Accepted: .html, .htm, .xlsx, .xls
+    ```
+  </Step>
+
+  <Step title="Process the timetable">
+    After the file is stored, click **Process**. The backend calls `POST /timetable/process`, which:
+
+    1. Retrieves the latest `timetable`-type upload for the exam center
+    2. Parses the HTML (or Excel) into structured entries
+    3. Deletes the previous timetable data
+    4. Inserts fresh entries in batches of 250
+    5. Updates the upload record status to `PROCESSED`
+
+    Processing typically completes in under 30 seconds for a standard MSBTE timetable.
+  </Step>
+
+  <Step title="Review parsed entries">
+    The timetable table displays all parsed entries with the following columns: **Day**, **Date**, **Session**, **Code**, **Subject Name**, **Scheme**, and **Students**. Student counts will read `0` until seating chart files are processed.
+
+    Use the toolbar filters to narrow by **Session** (Morning / Afternoon) or **Scheme**, and the search box to find entries by subject code. Click any column header to sort. Export the current view as CSV using the **Export** button.
+  </Step>
+</Steps>
+
+## Multi-Institute Context
+
+TestForge supports multiple connected institutes under a single exam center. The timetable belongs to the exam center and is shared across all connected institutes. However, each connected institute uploads its own seating chart independently, and student counts in the timetable are aggregated across all institutes.
+
+<Warning>
+  Uploading a new timetable resets all student counts to zero across every timetable entry. After replacing a timetable, re-process all connected institute seating charts to restore accurate student totals.
+</Warning>
+
+## Timetable Entry Data Model
+
+Each processed row maps to the following fields in the `timetable` table:
+
+| Column | Source | Example |
+|--------|--------|---------|
+| `exam_center_id` | Auth context | `EC001` |
+| `exam_day` | Parsed from header | `3` |
+| `date` | Parsed from header | `2025-03-12` |
+| `session` | Parsed from header | `Morning` |
+| `time_slot` | Cell 3 | `10:30 AM - 01:00 PM` |
+| `subject_code` | Cell 4 | `22317` |
+| `subject_name` | Cell 5 | `Advance Java` |
+| `scheme` | Cell 6 (split) | `K-17` |
+| `subject_id` | Cache lookup | UUID |
+| `subject_abbr` | Cache lookup | `AJ` |
+| `total_students` | Updated by seating import | `42` |
+
+## Statistics Dashboard
+
+Once the timetable is processed, four stat cards appear above the table:
+
+- **Subjects** — count of unique subject codes
+- **Students** — total enrolled examinees (populated after seating chart import)
+- **Exam Days** — calendar days between the first and last exam dates
+- **Examinees** — sum of all `total_students` across all entries

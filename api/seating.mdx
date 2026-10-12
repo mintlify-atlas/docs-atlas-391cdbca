@@ -1,0 +1,368 @@
+---
+title: "Seating Chart & Arrangement APIs — TestForge Exams"
+sidebarTitle: "Seating"
+description: "Process seating chart Excel files and seating arrangement files, with built-in mismatch detection and correction workflows for MSBTE exam centers."
+---
+
+The Seating APIs cover two related but distinct workflows. The Seating Chart processor imports student seating data from institute-level Excel files and links each student to a connected institute. The Seating Arrangement processor validates the official MSBTE seating arrangement file against the students already in the database and surfaces paper-code mismatches for review before committing.
+
+Both APIs require a valid exam-center authentication token. Files must be uploaded via `POST /api/upload/` before processing.
+
+<Tabs>
+  <Tab title="Seating Chart">
+
+The Seating Chart API (prefix `/api/seatingchart`) imports student records from an uploaded Excel file and associates them with a connected institute. After insertion it recalculates `total_students` counts in the `timetable` table so student tallies are always up to date.
+
+<Note>
+  The seating chart file must be uploaded first via `POST /api/upload/` with `file_type=seatingchart` and a valid `connected_institute_id`. The upload step performs sanitization — normalizing column names, stripping extraneous rows, and coercing seat numbers to integers.
+</Note>
+
+### POST /api/seatingchart/process
+
+Process a specific uploaded seating chart file. Parses student records from the Excel, inserts new students, updates existing ones (matched by `seat_number`), and updates timetable student counts.
+
+**Processing pipeline**
+
+1. Loads the subjects cache and institute cache from the database (one query each).
+2. Reads the sanitized Excel file. Expected columns after sanitization: `Seat Number`, `Enrollment Number`, `Name`, `Scheme`, `Subject Appearing For`.
+3. Resolves subject abbreviations from the `Subject Appearing For` column to canonical subject codes using the in-memory scheme lookup (`scheme → {abbr: code}`).
+4. Fetches all existing seat numbers for the exam center in a single query, then separates students into `INSERT` and `UPDATE` batches.
+5. Inserts / updates in batches of **250 rows** with a 50 ms pause between batches.
+6. Runs a single `WITH` statement to recalculate `total_students` across all timetable entries for the exam center.
+
+#### Request
+
+<ParamField body="stored_filename" type="string" required>
+  The server-assigned filename returned by `POST /api/upload/`. Must correspond to a `seatingchart` upload for the authenticated exam center.
+</ParamField>
+
+#### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when processing completed without errors.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Seating chart processed successfully"`.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Detailed processing statistics.
+
+  <Expandable title="data fields">
+    <ResponseField name="total_students" type="integer">
+      Total number of student rows parsed from the file.
+    </ResponseField>
+    <ResponseField name="inserted" type="integer">
+      Students added as new records.
+    </ResponseField>
+    <ResponseField name="updated" type="integer">
+      Existing student records updated.
+    </ResponseField>
+    <ResponseField name="skipped" type="integer">
+      Rows skipped due to validation issues.
+    </ResponseField>
+    <ResponseField name="timetable_entries_updated" type="integer">
+      Number of timetable rows whose `total_students` count was refreshed.
+    </ResponseField>
+    <ResponseField name="exam_center_id" type="string">
+      UUID of the authenticated exam center.
+    </ResponseField>
+    <ResponseField name="connected_institute_id" type="string">
+      UUID of the linked institute, sourced from the upload record.
+    </ResponseField>
+    <ResponseField name="stored_filename" type="string">
+      The filename that was processed.
+    </ResponseField>
+    <ResponseField name="processing_time_seconds" type="number">
+      Wall-clock time for the full operation, in seconds.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="string | null">
+  Error detail when `success` is `false`. Otherwise `null`.
+</ResponseField>
+
+#### Example
+
+```bash
+curl -X POST https://api.testforge.app/api/seatingchart/process \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"stored_filename": "seatingchart_ec-0001_a1b2c3d4.xlsx"}'
+```
+
+**Sample response**
+
+```json
+{
+  "success": true,
+  "message": "Seating chart processed successfully",
+  "data": {
+    "total_students": 120,
+    "inserted": 100,
+    "updated": 20,
+    "skipped": 0,
+    "timetable_entries_updated": 12,
+    "exam_center_id": "ec-0001-uuid",
+    "connected_institute_id": "inst-uuid",
+    "stored_filename": "seatingchart_ec-0001_a1b2c3d4.xlsx",
+    "processing_time_seconds": 3.21
+  },
+  "error": null
+}
+```
+
+  </Tab>
+  <Tab title="Seating Arrangement">
+
+The Seating Arrangement API (prefix `/api/seatingarrangement`) processes the official MSBTE seating arrangement Excel file. Because the file may list paper codes that differ from those imported via the seating chart, a two-step validation and correction workflow is built in.
+
+**File format** — The MSBTE seating arrangement Excel follows this column order:
+
+`SR No | Seat Number | Inst Code | Course Code | Semester | Master Code | Paper Code`
+
+Students appear across multiple rows — one row per paper per student. The processor groups rows by seat number and builds a `paper_codes` list per student.
+
+<Note>
+  The seating arrangement file must be uploaded first via `POST /api/upload/` with `file_type=seatingarrangement`. If mismatches are found during processing, the data is held in a temporary server-side session. Use `POST /api/seatingarrangement/fix-mismatches` to confirm or cancel before the session expires.
+</Note>
+
+### POST /api/seatingarrangement/process
+
+Parse the uploaded seating arrangement file, validate each student's paper codes against the database, and either commit directly (no mismatches) or return a mismatch report with a `temp_session_id`.
+
+**Validation logic** — For each seat number, the set of paper codes from the file is compared to the set of `sub_codes` stored in the `students` table. Any seat with missing or extra codes is flagged as a mismatch. All codes are coerced to integers before comparison to normalize formatting differences.
+
+#### Request
+
+<ParamField body="stored_filename" type="string" required>
+  The server-assigned filename returned by `POST /api/upload/` for a `seatingarrangement` upload.
+</ParamField>
+
+#### Response — No Mismatches
+
+<ResponseField name="success" type="boolean">
+  `true`.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Seating arrangement processed successfully"`.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Commit statistics (same shape as the seating chart response: `total_students`, `inserted`, `updated`, `skipped`, `timetable_entries_updated`, `exam_center_id`, `connected_institute_id`, `stored_filename`).
+</ResponseField>
+
+#### Response — Mismatches Found
+
+<ResponseField name="success" type="boolean">
+  `true` — mismatches are not an error; they require a decision.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  `"Found N mismatches. Please review and confirm fixes."`.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Mismatch report.
+
+  <Expandable title="data fields">
+    <ResponseField name="temp_session_id" type="string">
+      UUID that references the in-memory correction session. Pass this to `POST /api/seatingarrangement/fix-mismatches`.
+    </ResponseField>
+    <ResponseField name="total_students" type="integer">
+      Total unique seat numbers parsed from the file.
+    </ResponseField>
+    <ResponseField name="mismatch_count" type="integer">
+      Number of seats with at least one discrepancy.
+    </ResponseField>
+    <ResponseField name="mismatches" type="array">
+      Array of mismatch objects.
+
+      <Expandable title="mismatch fields">
+        <ResponseField name="seat_number" type="integer">
+          The affected seat number.
+        </ResponseField>
+        <ResponseField name="expected_subjects" type="array">
+          Paper codes recorded in the database (from seating chart).
+        </ResponseField>
+        <ResponseField name="actual_subjects" type="array">
+          Paper codes found in the seating arrangement file.
+        </ResponseField>
+        <ResponseField name="missing_subjects" type="array">
+          Codes present in the database but absent from the file.
+        </ResponseField>
+        <ResponseField name="extra_subjects" type="array">
+          Codes present in the file but absent from the database.
+        </ResponseField>
+        <ResponseField name="issue_type" type="string">
+          One of `MISSING_SUBJECTS`, `EXTRA_SUBJECTS`, or `BOTH_MISSING_AND_EXTRA`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example
+
+```bash
+curl -X POST https://api.testforge.app/api/seatingarrangement/process \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"stored_filename": "seatingarrangement_ec-0001_b2c3d4e5.xlsx"}'
+```
+
+**Sample response — mismatches found**
+
+```json
+{
+  "success": true,
+  "message": "Found 2 mismatches. Please review and confirm fixes.",
+  "data": {
+    "temp_session_id": "7f3a9b1c-...",
+    "total_students": 118,
+    "mismatch_count": 2,
+    "mismatches": [
+      {
+        "seat_number": 10234,
+        "expected_subjects": [22301, 22302],
+        "actual_subjects": [22301],
+        "missing_subjects": [22302],
+        "extra_subjects": [],
+        "issue_type": "MISSING_SUBJECTS"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+---
+
+### POST /api/seatingarrangement/fix-mismatches
+
+Resolve a pending mismatch correction session. Choose `CONFIRM_FIX` to apply auto-corrections using the database as truth, or `CANCEL` to abort without making any changes.
+
+When `CONFIRM_FIX` is chosen, the processor overwrites each mismatched student's paper codes with the values from the `students` table (`sub_codes`) and uses the database `scheme`. New students (present in the file but absent from the database) keep their parsed data unchanged.
+
+#### Request
+
+<ParamField body="temp_session_id" type="string" required>
+  The session ID returned by `POST /api/seatingarrangement/process` when mismatches were found.
+</ParamField>
+
+<ParamField body="action" type="string" required>
+  The decision to apply. Must be `CONFIRM_FIX` or `CANCEL`.
+</ParamField>
+
+#### Response
+
+<ResponseField name="success" type="boolean">
+  `true` for both `CONFIRM_FIX` and `CANCEL` outcomes.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Summary of the action taken.
+</ResponseField>
+
+<ResponseField name="data" type="object | null">
+  Commit statistics when `action` is `CONFIRM_FIX`; `null` when `action` is `CANCEL`.
+
+  <Expandable title="data fields (CONFIRM_FIX only)">
+    <ResponseField name="total_students" type="integer">
+      Total records processed.
+    </ResponseField>
+    <ResponseField name="inserted" type="integer">
+      New student records created.
+    </ResponseField>
+    <ResponseField name="updated" type="integer">
+      Existing records updated.
+    </ResponseField>
+    <ResponseField name="skipped" type="integer">
+      Records skipped (missing institute reference).
+    </ResponseField>
+    <ResponseField name="timetable_entries_updated" type="integer">
+      Timetable rows whose student count was refreshed.
+    </ResponseField>
+    <ResponseField name="mismatches_fixed" type="integer">
+      Number of seat-level mismatches that were corrected.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example
+
+```bash
+curl -X POST https://api.testforge.app/api/seatingarrangement/fix-mismatches \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"temp_session_id": "7f3a9b1c-...", "action": "CONFIRM_FIX"}'
+```
+
+**Sample response**
+
+```json
+{
+  "success": true,
+  "message": "Fixed 2 mismatches and saved data",
+  "data": {
+    "total_students": 118,
+    "inserted": 5,
+    "updated": 113,
+    "skipped": 0,
+    "timetable_entries_updated": 12,
+    "mismatches_fixed": 2
+  },
+  "error": null
+}
+```
+
+---
+
+### GET /api/seatingarrangement/temp-session/{temp_session_id}
+
+Retrieve the current state of a mismatch correction session. Use this to inspect the mismatch list without resolving it.
+
+#### Path Parameter
+
+<ParamField path="temp_session_id" type="string" required>
+  The session UUID returned by `POST /api/seatingarrangement/process`.
+</ParamField>
+
+#### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the session exists.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Session state.
+
+  <Expandable title="data fields">
+    <ResponseField name="temp_session_id" type="string">
+      The session UUID.
+    </ResponseField>
+    <ResponseField name="mismatch_count" type="integer">
+      Number of mismatched seat entries in this session.
+    </ResponseField>
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp when the session was created.
+    </ResponseField>
+    <ResponseField name="mismatches" type="array">
+      Full mismatch array (same shape as described in `POST /process`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example
+
+```bash
+curl -X GET \
+  "https://api.testforge.app/api/seatingarrangement/temp-session/7f3a9b1c-..." \
+  -H "Authorization: Bearer <token>"
+```
+
+  </Tab>
+</Tabs>
